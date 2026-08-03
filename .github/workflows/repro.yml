@@ -23,23 +23,7 @@ jobs:
           api-level: 30
           arch: x86_64
           disable-animations: true
-          script: |
-            PKG=me.timschneeberger.rootlessjamesdsp.debug
-            adb install -r app/build/outputs/apk/rootlessFdroid/debug/*x86_64*.apk
-            adb shell am start -n $PKG/me.timschneeberger.rootlessjamesdsp.activity.MainActivity || true
-            sleep 15
-            printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map>\n<boolean name="bassex_enable" value="true" />\n</map>\n' > /tmp/bassex.xml
-            printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map>\n<boolean name="first_boot" value="false" />\n</map>\n' > /tmp/var.xml
-            adb shell "run-as $PKG mkdir -p shared_prefs" || true
-            adb shell "run-as $PKG sh -c 'cat > shared_prefs/dsp_bassex.xml'" < /tmp/bassex.xml
-            adb shell "run-as $PKG sh -c 'cat > shared_prefs/variable.xml'" < /tmp/var.xml
-            adb shell am force-stop $PKG
-            adb logcat -c || true
-            adb shell am start -n $PKG/me.timschneeberger.rootlessjamesdsp.activity.MainActivity || true
-            sleep 20
-            adb logcat -d > logcat-main.txt || true
-            adb logcat -d -b crash > logcat-crash.txt || true
-            tail -50 logcat-crash.txt || true
+          script: bash ci/repro.sh
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
