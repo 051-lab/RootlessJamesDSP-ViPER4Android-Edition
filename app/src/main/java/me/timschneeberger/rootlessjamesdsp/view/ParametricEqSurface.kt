@@ -22,6 +22,16 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
     private var mControlBarText = Paint()
     private var mFrequencyResponseBg = Paint()
     private var mFrequencyResponseHighlight = Paint()
+    private var mHandlePaint = Paint()
+    private var mHandleSelectedPaint = Paint()
+
+    // Interactive bands (freq, gainDb, q). Editable by dragging.
+    private var mBands: ParametricEqBandList? = null
+    private var mSelectedBand = -1
+    private var mDragging = false
+    private var mLastPinchDist = -1f
+    var onBandsChanged: ((ParametricEqBandList) -> Unit)? = null
+    var interactive = false
 
     private var mHeight = 0.0f
     private var mWidth = 0.0f
@@ -57,6 +67,13 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
         mFrequencyResponseHighlight.color = getColor(android.R.attr.colorAccent)
         mFrequencyResponseHighlight.isAntiAlias = true
         mFrequencyResponseHighlight.strokeWidth = 8f
+
+        mHandlePaint.style = Paint.Style.FILL
+        mHandlePaint.color = getColor(android.R.attr.colorAccent)
+        mHandlePaint.isAntiAlias = true
+        mHandleSelectedPaint.style = Paint.Style.FILL
+        mHandleSelectedPaint.color = getColor(android.R.attr.textColorPrimary)
+        mHandleSelectedPaint.isAntiAlias = true
     }
 
     private fun getColor(colorAttribute: Int): Int {
@@ -162,9 +179,100 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
         }
         canvas.drawPath(freqResponseBg, mFrequencyResponseBg)
         canvas.drawPath(freqResponse, mFrequencyResponseHighlight)
+
+        // Draw draggable band handles
+        if (interactive) {
+            mBands?.forEachIndexed { i, band ->
+                val hx = projectX(band.frequency) * mWidth
+                val hy = projectY((band.gain + mPreampDb).toFloat()) * mHeight
+                val r = if (i == mSelectedBand) 22f else 16f
+                canvas.drawCircle(hx, hy, r, if (i == mSelectedBand) mHandleSelectedPaint else mHandlePaint)
+                if (i == mSelectedBand) {
+                    canvas.drawCircle(hx, hy, r + 6f, mFrequencyResponseHighlight)
+                }
+            }
+        }
+    }
+
+    private fun unprojectFreq(xFrac: Float): Double {
+        val minP = ln(MIN_FREQ); val maxP = ln(MAX_FREQ)
+        return exp(minP + xFrac.coerceIn(0f, 1f) * (maxP - minP))
+    }
+    private fun unprojectGain(yFrac: Float): Double {
+        val pos = 1.0f - yFrac.coerceIn(0f, 1f)
+        return minDb + pos * (maxDb - minDb)
+    }
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        val bands = mBands ?: return false
+        if (!interactive) return false
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                // pick nearest band handle within radius
+                var best = -1; var bestD = Float.MAX_VALUE
+                bands.forEachIndexed { i, band ->
+                    val hx = projectX(band.frequency) * mWidth
+                    val hy = projectY((band.gain + mPreampDb).toFloat()) * mHeight
+                    val d = hypot(event.x - hx, event.y - hy)
+                    if (d < bestD) { bestD = d; best = i }
+                }
+                if (best >= 0 && bestD < 90f) {
+                    mSelectedBand = best; mDragging = true
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    postInvalidate()
+                    return true
+                }
+                return false
+            }
+            android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.pointerCount == 2 && mSelectedBand >= 0) {
+                    mLastPinchDist = hypot(
+                        event.getX(0) - event.getX(1),
+                        event.getY(0) - event.getY(1))
+                }
+                return true
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (!mDragging || mSelectedBand < 0) return false
+                val band = bands[mSelectedBand]
+                if (event.pointerCount >= 2 && mLastPinchDist > 0) {
+                    // pinch = adjust Q (bandwidth)
+                    val dist = hypot(
+                        event.getX(0) - event.getX(1),
+                        event.getY(0) - event.getY(1))
+                    val ratio = dist / mLastPinchDist
+                    band.q = (band.q * ratio).coerceIn(0.1, 20.0)
+                    mLastPinchDist = dist
+                } else {
+                    band.frequency = unprojectFreq(event.x / mWidth).coerceIn(MIN_FREQ, MAX_FREQ)
+                    band.gain = unprojectGain(event.y / mHeight).coerceIn(-24.0, 24.0)
+                }
+                setBands(bands, mPreampDb)
+                onBandsChanged?.invoke(bands)
+                return true
+            }
+            android.view.MotionEvent.ACTION_POINTER_UP -> {
+                mLastPinchDist = -1f
+                return true
+            }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                mDragging = false
+                mLastPinchDist = -1f
+                parent?.requestDisallowInterceptTouchEvent(false)
+                return true
+            }
+        }
+        return false
+    }
+
+    fun selectBand(index: Int) {
+        mSelectedBand = index
+        postInvalidate()
     }
 
     fun setBands(bands: ParametricEqBandList, preampDb: Double = mPreampDb) {
+        mBands = bands
+        if (mSelectedBand >= bands.size) mSelectedBand = -1
         mPreampDb = preampDb
         if (bands.isEmpty()) {
             mCurveFreqs = DoubleArray(0)

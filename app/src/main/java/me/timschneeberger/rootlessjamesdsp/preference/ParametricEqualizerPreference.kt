@@ -13,6 +13,7 @@ import me.timschneeberger.rootlessjamesdsp.databinding.PreferenceParametricEqual
 import me.timschneeberger.rootlessjamesdsp.model.ParametricEqBandList
 import me.timschneeberger.rootlessjamesdsp.utils.Constants
 import me.timschneeberger.rootlessjamesdsp.utils.extensions.ContextExtensions.registerLocalReceiver
+import me.timschneeberger.rootlessjamesdsp.utils.extensions.ContextExtensions.sendLocalBroadcast
 import me.timschneeberger.rootlessjamesdsp.utils.extensions.ContextExtensions.unregisterLocalReceiver
 import timber.log.Timber
 import java.util.MissingFormatArgumentException
@@ -87,7 +88,14 @@ class ParametricEqualizerPreference : Preference {
             .getFloat(context.getString(R.string.key_peq_preamp), 0f)
             .toDouble()
 
+        binding?.layoutEqualizer?.interactive = true
         binding?.layoutEqualizer?.setBands(bands, preampDb)
+        binding?.layoutEqualizer?.onBandsChanged = { changed ->
+            val serialized = changed.serialize()
+            initialValue = serialized
+            persistString(serialized)
+            context.sendLocalBroadcast(Intent(Constants.ACTION_PARAMETRIC_EQ_CHANGED))
+        }
         try {
             binding?.bandCount?.text =
                 context.resources.getQuantityString(R.plurals.peq_bands_count, bands.size, bands.size)

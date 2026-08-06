@@ -26,10 +26,10 @@ enum class ParametricEqFilterType(val code: Int, val apoLabel: String, val displ
  * same audio parameters compare as equal regardless of identity.
  */
 class ParametricEqBand(
-    val frequency: Double,
-    val gain: Double,
-    val q: Double,
-    val filterType: ParametricEqFilterType = ParametricEqFilterType.PEAKING,
+    var frequency: Double,
+    var gain: Double,
+    var q: Double,
+    var filterType: ParametricEqFilterType = ParametricEqFilterType.PEAKING,
     val uuid: UUID = UUID.randomUUID()
 ) : Serializable {
 

@@ -118,6 +118,7 @@
     <string name="eq_preset_rock">Rock</string>
     <string name="eq_preset_vocal">Vocal Booster</string>
 
+    <string name="peq_info">Fully adjustable parametric EQ: drag any point to move its frequency (left/right) and gain (up/down). Pinch with two fingers on a selected point to widen or narrow its bandwidth (Q). Tap the band count to add or remove bands.</string>
     <string name="peq_enable">Parametric equalizer</string>
     <string name="peq_bands">Parametric EQ bands</string>
     <string name="title_activity_peq">Parametric equalizer</string>
