@@ -25,24 +25,24 @@
     <string name="notification_idle">Audio processing idle</string>
     <string name="notification_processing_title">Audio processing active</string>
     <string name="notification_processing_disabled_title">Audio processing disabled</string>
-    <string name="notification_processing_legacy">Tap to open JamesDSP manager</string>
+    <string name="notification_processing_legacy">Tap to open RootlessViPER4Android</string>
 
     <!-- Permission request notifications -->
-    <string name="notification_request_permission_title">User action is required to launch JamesDSP</string>
-    <string name="notification_request_permission">Tap to grant capture permission and enable JamesDSP\'s audio processing</string>
+    <string name="notification_request_permission_title">User action is required to launch RootlessViPER4Android</string>
+    <string name="notification_request_permission">Tap to grant capture permission and enable RootlessViPER4Android\'s audio processing</string>
 
     <!-- Session control loss notifications -->
-    <string name="session_control_loss_toast">JamesDSP stopped due to audio session control loss. Please disable other audio effect apps.</string>
-    <string name="session_control_loss_notification_title">Audio processing stopped. Another app is interfering with JamesDSP.</string>
-    <string name="session_control_loss_notification">Please disable all other apps that provide global audio effects before re-enabling JamesDSP.</string>
+    <string name="session_control_loss_toast">RootlessViPER4Android stopped due to audio session control loss. Please disable other audio effect apps.</string>
+    <string name="session_control_loss_notification_title">Audio processing stopped. Another app is interfering with RootlessViPER4Android.</string>
+    <string name="session_control_loss_notification">Please disable all other apps that provide global audio effects before re-enabling RootlessViPER4Android.</string>
 
     <!-- App compatibility issue notifications -->
-    <string name="session_app_compat_toast">JamesDSP stopped due to incompatible media app. Please check the notification to resolve this problem.</string>
-    <string name="session_app_compat_notification_title">Audio processing stopped. Another app is interfering with JamesDSP.</string>
+    <string name="session_app_compat_toast">RootlessViPER4Android stopped due to incompatible media app. Please check the notification to resolve this problem.</string>
+    <string name="session_app_compat_notification_title">Audio processing stopped. Another app is interfering with RootlessViPER4Android.</string>
     <string name="session_app_compat_notification">Tap this notification to resolve the problem.</string>
 
     <!-- Capture permission revoked notifications -->
-    <string name="capture_permission_revoked_toast">JamesDSP has been stopped because the audio capture permission was revoked.</string>
+    <string name="capture_permission_revoked_toast">RootlessViPER4Android has been stopped because the audio capture permission was revoked.</string>
 
     <!-- General purpose -->
     <string name="install">Install</string>
@@ -435,14 +435,14 @@
     <string name="onboarding_perm_microphone_title">Audio recording permission</string>
     <string name="onboarding_perm_microphone_caption">Required to record internal audio. The hardware microphone is not activated.</string>
     <string name="onboarding_perm_notification_title">Notification permission</string>
-    <string name="onboarding_perm_notification_caption">Required to receive important status updates and information about JamesDSP\'s processing state.</string>
+    <string name="onboarding_perm_notification_caption">Required to receive important status updates and information about RootlessViPER4Android\'s processing state.</string>
     <string name="onboarding_perm_cast_title">Cast/recording permission</string>
     <string name="onboarding_perm_cast_caption">You need to explicitly grant this app permission to record audio content every time it launches.</string>
     <string name="onboarding_perm_missing_title">Runtime permissions not granted</string>
     <string name="onboarding_perm_missing">Please grant all requested runtime permissions to continue.\nIf you repeatedly denied the permissions, you need to grant them manually in the system settings.</string>
     <string name="onboarding_perm_diag">Allow sending diagnostic reports</string>
     <string name="onboarding_perm_diag_caption">This app submits crash reports and other diagnostic data, including information about other active applications, to allow me to detect and solve compatibility issues and bugs easier.</string>
-    <string name="onboarding_finish_header">JamesDSP is set-up!</string>
+    <string name="onboarding_finish_header">RootlessViPER4Android is set-up!</string>
     <string name="onboarding_finish_caption">If you encounter any issues, please visit the troubleshooting options.</string>
 
     <string name="limit_session_control_conflict_title">Disable other audio effect apps</string>
@@ -450,7 +450,7 @@
     <string name="limit_unsupported_apps_title">Unsupported media apps</string>
     <string name="limit_unsupported_apps">Apps blocking internal audio capture remain unprocessed (e.g., Spotify, Google Chrome).</string>
     <string name="limit_hw_accel_title">HW-accelerated audio playback issues</string>
-    <string name="limit_hw_accel">HW-accelerated audio playback (fast tracks) may sometimes cause duplicated audio or kill JamesDSP in some circumstances. Please add the affected music player to the excluded apps list to prevent JamesDSP from re-routing it.</string>
+    <string name="limit_hw_accel">HW-accelerated audio playback (fast tracks) may sometimes cause duplicated audio or kill RootlessViPER4Android in some circumstances. Please add the affected music player to the excluded apps list to prevent RootlessViPER4Android from re-routing it.</string>
     <string name="limit_detect_delay_title">Audio session detection delay</string>
     <string name="limit_detect_delay"><![CDATA[After an app has opened a new media session to playback audio, you may hear duplicated or cut-off audio for a very short period (about <250ms).]]></string>
     <string name="limit_latency_title">Increased latency</string>
@@ -487,7 +487,7 @@
     <string name="audio_format_enhanced_processing_off">Enhanced processing disabled</string>
     <string name="audio_format_enhanced_processing_info_title">What is enhanced processing?</string>
     <string name="audio_format_enhanced_processing_info">Tap to view documentation</string>
-    <string name="audio_format_enhanced_processing_info_content">When enhanced processing is enabled, you can selectively exclude certain apps from being processed by JamesDSP. Use the 3-dot menu on the bottom right corner and select \'Excluded apps\' to access this feature.\n\nWhile legacy mode is disabled, JamesDSP relies on media apps to send a system broadcast when they start playback. This is an advantage over legacy mode because each app gets its own JamesDSP effect engine assigned to it, which allows for more fine-grained control. Otherwise, with legacy mode turned on, all apps would share a single processing engine, which Android deprecates and should not be used anymore.\n\nUnfortunately, not all media apps do this correctly and, therefore, would not function correctly with legacy mode disabled. To solve this issue, you can enable enhanced processing. Instead of relying on system broadcasts about new media sessions, JamesDSP will proactively scan for media sessions by itself and allow proper support for uncooperative media apps.</string>
+    <string name="audio_format_enhanced_processing_info_content">When enhanced processing is enabled, you can selectively exclude certain apps from being processed by RootlessViPER4Android. Use the 3-dot menu on the bottom right corner and select \'Excluded apps\' to access this feature.\n\nWhile legacy mode is disabled, RootlessViPER4Android relies on media apps to send a system broadcast when they start playback. This is an advantage over legacy mode because each app gets its own effect engine assigned to it, which allows for more fine-grained control. Otherwise, with legacy mode turned on, all apps would share a single processing engine, which Android deprecates and should not be used anymore.\n\nUnfortunately, not all media apps do this correctly and, therefore, would not function correctly with legacy mode disabled. To solve this issue, you can enable enhanced processing. Instead of relying on system broadcasts about new media sessions, RootlessViPER4Android will proactively scan for media sessions by itself and allow proper support for uncooperative media apps.</string>
     <string name="audio_format_media_apps_need_restart">You need to restart all active media apps after changing this setting to resume audio processing.</string>
     <string name="audio_format_summary">Preferred audio encoding, buffer size</string>
     <string name="audio_format_summary_root">Legacy mode, enhanced processing</string>
@@ -706,8 +706,8 @@
     <string name="editor_find_previous_match">Find previous match</string>
     <string name="editor_search_keyword">Search</string>
     <string name="editor_source_position">%1$d:%2$d</string>
-    <string name="editor_engine_down_title">JamesDSP is not active</string>
-    <string name="editor_engine_down">Cannot run script because JamesDSP is disabled. Please turn on JamesDSP to execute scripts.</string>
+    <string name="editor_engine_down_title">RootlessViPER4Android is not active</string>
+    <string name="editor_engine_down">Cannot run script because RootlessViPER4Android is disabled. Please turn on RootlessViPER4Android to execute scripts.</string>
     <string name="editor_save_prompt_title">Save changes?</string>
     <string name="editor_save_prompt">The current script has unsaved changes. Do you want to save your changes or discard them?</string>
     <string name="editor_script_launched">Script launched</string>
@@ -729,8 +729,8 @@
     <string name="app_compat_retry">Retry</string>
     <string name="app_compat_exclude">Exclude</string>
     <string name="app_compat_title">Audio processing has been suspended to prevent duplicated audio</string>
-    <string name="app_compat_explanation">The following app is unsupported because it causes RootlessJamesDSP to lose control over its audio routing:</string>
-    <string name="app_compat_instruction">Please check the app\'s settings if you can disable HW-acceleration or other settings that could interfere with RootlessJamesDSP and tap \'Retry\'.</string>
+    <string name="app_compat_explanation">The following app is unsupported because it causes RootlessViPER4Android to lose control over its audio routing:</string>
+    <string name="app_compat_instruction">Please check the app\'s settings if you can disable HW-acceleration or other settings that could interfere with RootlessViPER4Android and tap \'Retry\'.</string>
     <string name="app_compat_instruction_exclude">Alternatively, select \'Exclude\' to bypass this issue by excluding the incompatible app from audio processing.</string>
     <string name="app_compat_unknown_pkg_name">Unknown package name</string>
 
@@ -764,7 +764,7 @@
 
     <!-- Revert confirmation -->
     <string name="revert_confirmation_title">Are you sure?</string>
-    <string name="revert_confirmation">Do you want to reset your current JamesDSP preset to the default values?</string>
+    <string name="revert_confirmation">Do you want to reset your current RootlessViPER4Android preset to the default values?</string>
 
     <!-- File intent handler -->
     <string name="intent_import_preset">Import preset</string>

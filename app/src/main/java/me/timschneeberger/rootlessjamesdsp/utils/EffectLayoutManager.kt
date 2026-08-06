@@ -1,6 +1,5 @@
 package me.timschneeberger.rootlessjamesdsp.utils
 
-import android.animation.ObjectAnimator
 import android.content.Context
 import android.view.DragEvent
 import android.view.Gravity
@@ -41,7 +40,6 @@ class EffectLayoutManager(
 
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val editRows = HashMap<String, View>()
-    private val animators = ArrayList<ObjectAnimator>()
 
     var editMode = false
         private set
@@ -64,22 +62,48 @@ class EffectLayoutManager(
     private fun hiddenKeys(): MutableSet<String> =
         HashSet(prefs.getStringSet(KEY_HIDDEN, emptySet()) ?: emptySet())
 
-    private fun storedOrder(): List<String> {
+    /** The order the cards currently sit in inside the container. */
+    private fun containerOrder(): List<String> {
+        val keys = ArrayList<String>()
+        for (i in 0 until container.childCount) {
+            itemForView(container.getChildAt(i))?.let { keys.add(it.key) }
+        }
+        return keys
+    }
+
+    /**
+     * Returns the user's saved order, or null if they've never customised the
+     * layout - in which case the layout is left exactly as declared.
+     */
+    private fun storedOrder(): List<String>? {
         val saved = prefs.getString(KEY_ORDER, null)
             ?.split(",")
             ?.filter { it.isNotBlank() }
-            ?: return items.map { it.key }
-        // Keep known keys in their saved order, then append anything new
-        // (e.g. effects added by an app update) so nothing silently vanishes.
-        val known = items.map { it.key }
-        return saved.filter { known.contains(it) } + known.filter { !saved.contains(it) }
+            ?: return null
+
+        val natural = containerOrder()
+        val result = ArrayList(saved.filter { natural.contains(it) })
+        // Effects added by an app update aren't in the saved order yet; slot
+        // them in at their declared position instead of dumping them at the end.
+        natural.forEachIndexed { index, key ->
+            if (!result.contains(key)) {
+                result.add(index.coerceAtMost(result.size), key)
+            }
+        }
+        return result
     }
 
     // ------------------------------------------------------------------ apply
 
     /** Applies the saved order and visibility to the container. */
     fun applyLayout() {
-        val ordered = storedOrder().mapNotNull { key ->
+        val order = storedOrder()
+        if (order == null) {
+            // Untouched layout: keep the declared order as-is
+            applyVisibility()
+            return
+        }
+        val ordered = order.mapNotNull { key ->
             items.firstOrNull { it.key == key }?.let { item -> viewFor(item) }
         }
         if (ordered.isEmpty()) return
@@ -126,10 +150,9 @@ class EffectLayoutManager(
         applyVisibility()
 
         val hidden = hiddenKeys()
-        items.forEachIndexed { index, item ->
-            val view = viewFor(item) ?: return@forEachIndexed
+        items.forEach { item ->
+            val view = viewFor(item) ?: return@forEach
             collapseCard(view, item, hidden.contains(item.key))
-            startWiggle(view, index)
             view.setOnLongClickListener {
                 beginDrag(view)
                 true
@@ -144,12 +167,8 @@ class EffectLayoutManager(
         if (!editMode) return
         editMode = false
 
-        animators.forEach { it.cancel() }
-        animators.clear()
-
         items.forEach { item ->
             val view = viewFor(item) ?: return@forEach
-            view.rotation = 0f
             view.scaleX = 1f
             view.scaleY = 1f
             view.alpha = 1f
@@ -229,17 +248,6 @@ class EffectLayoutManager(
         } else {
             (view as? TextView)?.alpha = 1f
         }
-    }
-
-    /** Gentle iOS-style wiggle so it's obvious the cards are movable. */
-    private fun startWiggle(view: View, index: Int) {
-        val animator = ObjectAnimator.ofFloat(view, View.ROTATION, -0.7f, 0.7f).apply {
-            duration = 105L + (index % 5) * 14L
-            repeatMode = ObjectAnimator.REVERSE
-            repeatCount = ObjectAnimator.INFINITE
-        }
-        animator.start()
-        animators.add(animator)
     }
 
     private fun beginDrag(view: View) {

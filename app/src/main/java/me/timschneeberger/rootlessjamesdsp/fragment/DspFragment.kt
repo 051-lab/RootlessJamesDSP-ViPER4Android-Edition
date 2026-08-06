@@ -345,7 +345,7 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
             binding.editLayoutButton.setImageResource(
                 if (editing) R.drawable.ic_twotone_check_24dp else R.drawable.ic_twotone_edit_24dp
             )
-            binding.searchInput.isVisible = !editing
+            binding.searchInput.isEnabled = !editing
             if (editing) {
                 Snackbar.make(binding.root, R.string.effect_edit_hint, Snackbar.LENGTH_LONG).show()
             }

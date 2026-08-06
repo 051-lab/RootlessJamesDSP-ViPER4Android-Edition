@@ -87,6 +87,17 @@ Output limiter (with selectable peak / soft-saturation modes), auto-loudness com
 - ➖ Removed the redundant Parametric EQ card (Arbitrary-response/graphic EQ covers it)
 - 📛 App renamed to **RootlessViPER4Android** (installs alongside the original RootlessJamesDSP)
 
+## 🗺 Roadmap
+
+Requested by the community, in rough priority order:
+
+- **Global "Poweramp-style" mode** — process the whole output mix with Android's built-in effect API instead of audio capture: no capture permission, no persistent notification, and apps that block capture (Spotify) would work. Trade-off: only EQ/bass/limiter-class effects can run there — the ViPER effects need the capture engine. Deprecated by Google and device-dependent (works on many Samsungs, often not Pixels), so it'll ship clearly labelled as experimental.
+- **Custom effect groups** — create, rename and hide your own groups; drag cards between them
+- **Search, sorting & hiding on the presets screen**
+- **Chained Liveprog scripts** — multi-select scripts and get one card per script, chained in order
+- **Rooted mode** — for devices with the JamesDSP magisk module (testers welcome!)
+- **Minimum-phase toggle** for the graphic EQ
+
 ## 📲 Download & Install
 1. Grab the latest APK from the [**Releases**](https://github.com/alienware377/RootlessJamesDSP-ViPER4Android-Edition/releases) page (or fresh builds from [Actions](https://github.com/alienware377/RootlessJamesDSP-ViPER4Android-Edition/actions)).
 2. Install and follow the in-app onboarding — it walks you through the permission setup step-by-step.
