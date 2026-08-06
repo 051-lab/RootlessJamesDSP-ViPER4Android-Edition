@@ -229,6 +229,10 @@ class JamesDspLocalEngine(context: Context, callbacks: JamesDspWrapper.JamesDspC
         return JamesDspWrapper.setLiveprog(handle, enable, name, script)
     }
 
+    override fun setLiveprogSlotInternal(slot: Int, enable: Boolean, name: String, script: String): Boolean {
+        return JamesDspWrapper.setLiveprogSlot(handle, slot, enable, name, script)
+    }
+
     // Feature support
     override fun supportsEelVmAccess(): Boolean { return true }
     override fun supportsCustomCrossfeed(): Boolean { return true }

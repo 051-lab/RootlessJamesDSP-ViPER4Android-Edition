@@ -57,6 +57,7 @@ object JamesDspWrapper {
     external fun setStereoEnhancement(self: JamesDspHandle, enable: Boolean, level: Float): Boolean
     external fun setVacuumTube(self: JamesDspHandle, enable: Boolean, level: Float): Boolean
     external fun setLiveprog(self: JamesDspHandle, enable: Boolean, id: String, liveprogContent: String): Boolean
+    external fun setLiveprogSlot(self: JamesDspHandle, slot: Int, enable: Boolean, id: String, script: String): Boolean
 
     // EEL VM utilities
     external fun enumerateEelVariables(self: JamesDspHandle): ArrayList<EelVmVariable>

@@ -766,6 +766,44 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setVacuumTube(J
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setLiveprogSlot(JNIEnv *env, jobject obj, jlong self,
+                                                                                jint slot, jboolean enable, jstring id, jstring liveprogContent)
+{
+    DECLARE_DSP_B
+
+    if (slot < 1 || slot > 3)
+        return false;
+
+    setStdOutHandler(receiveLiveprogStdOut, wrapper);
+    LiveProgDisableSlot(dsp, slot);
+
+    if (!enable)
+        return true;
+
+    const char *nativeString = env->GetStringUTFChars(liveprogContent, nullptr);
+    if (strlen(nativeString) < 1) {
+        LOGD("JamesDspWrapper::setLiveprogSlot: empty file")
+        env->ReleaseStringUTFChars(liveprogContent, nativeString);
+        return true;
+    }
+
+    env->CallVoidMethod(wrapper->callbackInterface, wrapper->callbackOnLiveprogExec, id);
+
+    int ret = LiveProgStringParserSlot(dsp, slot, (char*)nativeString);
+    env->ReleaseStringUTFChars(liveprogContent, nativeString);
+
+    // Workaround due to library bug (mirrors setLiveprog)
+    jdsp_unlock(dsp);
+
+    if (ret <= 0)
+    {
+        LOGW("JamesDspWrapper::setLiveprogSlot: failed to compile script for slot %d (code %d)", slot, ret)
+        return false;
+    }
+    return true;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setLiveprog(JNIEnv *env, jobject obj, jlong self,
                                                                             jboolean enable, jstring id, jstring liveprogContent)
 {

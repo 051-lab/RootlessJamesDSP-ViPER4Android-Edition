@@ -209,6 +209,12 @@
 
     <string name="liveprog_enable">Live programmable DSP</string>
     <string name="liveprog_file">Liveprog script</string>
+
+    <string name="liveprog_file2">Chained script 2</string>
+
+    <string name="liveprog_file3">Chained script 3</string>
+
+    <string name="liveprog_file4">Chained script 4</string>
     <string name="liveprog_additional_params">Additional script parameters</string>
     <string name="liveprog_additional_params_not_supported">Selected script has no customizable parameters</string>
     <string name="liveprog_not_found">Script not found</string>

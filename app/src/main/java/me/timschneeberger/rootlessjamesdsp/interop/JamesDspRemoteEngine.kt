@@ -304,6 +304,8 @@ class JamesDspRemoteEngine(
     }
 
     override fun setLiveprogInternal(enable: Boolean, name: String, script: String): Boolean {
+
+    override fun setLiveprogSlotInternal(slot: Int, enable: Boolean, name: String, script: String): Boolean = true
         val prevCrc = this.liveprogHash
         val currentCrc = script.crc()
 
