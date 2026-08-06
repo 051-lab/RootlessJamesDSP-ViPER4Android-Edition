@@ -303,9 +303,9 @@ class JamesDspRemoteEngine(
         return effect.setParameter(1210, enable.toShort()) == AudioEffect.SUCCESS
     }
 
-    override fun setLiveprogInternal(enable: Boolean, name: String, script: String): Boolean {
-
     override fun setLiveprogSlotInternal(slot: Int, enable: Boolean, name: String, script: String): Boolean = true
+
+    override fun setLiveprogInternal(enable: Boolean, name: String, script: String): Boolean {
         val prevCrc = this.liveprogHash
         val currentCrc = script.crc()
 
