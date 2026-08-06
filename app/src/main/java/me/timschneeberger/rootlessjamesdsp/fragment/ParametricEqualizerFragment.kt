@@ -192,8 +192,6 @@ class ParametricEqualizerFragment : Fragment() {
         binding.filterTypeGroup.addOnButtonCheckedListener { _, _, isChecked ->
             if (isChecked) editorApply()
         }
-        }
-        }
 
         binding.confirm.setOnClickListener {
             editorSave()
