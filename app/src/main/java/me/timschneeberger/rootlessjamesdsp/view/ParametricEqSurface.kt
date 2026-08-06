@@ -30,7 +30,17 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
     private var mSelectedBand = -1
     private var mDragging = false
     private var mLastPinchDist = -1f
+    private var mLongPressFired = false
+    private val mLongPressRunnable = Runnable { fireLongPress() }
+    private var mDownX = 0f
+    private var mDownY = 0f
+    private var mDownOnHandle = -1
     var onBandsChanged: ((ParametricEqBandList) -> Unit)? = null
+    /** Called with (frequency, gainDb) when the user long-presses empty space. */
+    var onBandAddRequested: ((Double, Double) -> Unit)? = null
+    /** Called with the band index when the user long-presses an existing handle. */
+    var onBandRemoveRequested: ((Int) -> Unit)? = null
+    var onBandSelected: ((Int) -> Unit)? = null
     var interactive = false
 
     private var mHeight = 0.0f
@@ -216,13 +226,21 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
                     val d = hypot(event.x - hx, event.y - hy)
                     if (d < bestD) { bestD = d; best = i }
                 }
-                if (best >= 0 && bestD < 90f) {
-                    mSelectedBand = best; mDragging = true
-                    parent?.requestDisallowInterceptTouchEvent(true)
+                mDownX = event.x
+                mDownY = event.y
+                mLongPressFired = false
+                mDownOnHandle = if (best >= 0 && bestD < 90f) best else -1
+                parent?.requestDisallowInterceptTouchEvent(true)
+                removeCallbacks(mLongPressRunnable)
+                postDelayed(mLongPressRunnable, 500L)
+
+                if (mDownOnHandle >= 0) {
+                    mSelectedBand = mDownOnHandle
+                    mDragging = true
+                    onBandSelected?.invoke(mSelectedBand)
                     postInvalidate()
-                    return true
                 }
-                return false
+                return true
             }
             android.view.MotionEvent.ACTION_POINTER_DOWN -> {
                 if (event.pointerCount == 2 && mSelectedBand >= 0) {
@@ -233,6 +251,9 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
                 return true
             }
             android.view.MotionEvent.ACTION_MOVE -> {
+                if (hypot(event.x - mDownX, event.y - mDownY) > 24f) {
+                    removeCallbacks(mLongPressRunnable)
+                }
                 if (!mDragging || mSelectedBand < 0) return false
                 val band = bands[mSelectedBand]
                 if (event.pointerCount >= 2 && mLastPinchDist > 0) {
@@ -256,6 +277,7 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
                 return true
             }
             android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(mLongPressRunnable)
                 mDragging = false
                 mLastPinchDist = -1f
                 parent?.requestDisallowInterceptTouchEvent(false)
@@ -263,6 +285,20 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
             }
         }
         return false
+    }
+
+    private fun fireLongPress() {
+        if (mLongPressFired) return
+        mLongPressFired = true
+        mDragging = false
+        if (mDownOnHandle >= 0) {
+            onBandRemoveRequested?.invoke(mDownOnHandle)
+        } else {
+            val freq = unprojectFreq(mDownX / mWidth)
+            val gain = unprojectGain(mDownY / mHeight)
+            onBandAddRequested?.invoke(freq, gain)
+        }
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
     }
 
     fun selectBand(index: Int) {

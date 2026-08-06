@@ -119,6 +119,9 @@
     <string name="eq_preset_vocal">Vocal Booster</string>
 
     <string name="peq_info">Fully adjustable parametric EQ: drag any point to move its frequency (left/right) and gain (up/down). Pinch with two fingers on a selected point to widen or narrow its bandwidth (Q). Tap the band count to add or remove bands.</string>
+    <string name="peq_undo">Undo</string>
+    <string name="peq_redo">Redo</string>
+    <string name="peq_hint_interactive">Drag a point to move it · pinch to change its width · long-press empty space to add a band, or a point to delete it</string>
     <string name="peq_enable">Parametric equalizer</string>
     <string name="peq_bands">Parametric EQ bands</string>
     <string name="title_activity_peq">Parametric equalizer</string>
@@ -156,7 +159,7 @@
     <string name="peq_export_success">Exported successfully</string>
     <string name="peq_edit_hint">EqualizerAPO format</string>
     <string name="peq_preamp">Preamp</string>
-    <string name="peq_preamp_range">Value between -30dB and 0dB</string>
+    <string name="peq_preamp_range">Value between -30dB and 30dB</string>
 
     <string name="geq_enable">Arbitrary response equalizer</string>
     <string name="geq_nodes">Magnitude response</string>

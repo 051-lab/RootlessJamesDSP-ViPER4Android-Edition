@@ -231,10 +231,110 @@ class ParametricEqualizerFragment : Fragment() {
         // Load band data
         binding.bandList.layoutManager = LinearLayoutManager(requireContext())
         loadBands(savedInstanceState)
+        setupInteractiveGraph()
 
         updateViewState()
         return binding.root
     }
+
+    // ------------------------------------------------------- undo / redo
+
+    private val undoStack = ArrayDeque<String>()
+    private val redoStack = ArrayDeque<String>()
+    private var restoringHistory = false
+
+    private fun snapshot() = adapter.bands.serialize()
+
+    /** Records the state *before* a change so it can be undone. */
+    private fun pushHistory(previous: String) {
+        if (restoringHistory) return
+        if (undoStack.lastOrNull() == previous) return
+        undoStack.addLast(previous)
+        while (undoStack.size > 50) undoStack.removeFirst()
+        redoStack.clear()
+        updateHistoryButtons()
+    }
+
+    private fun applySerialized(value: String) {
+        restoringHistory = true
+        adapter.bands.deserialize(value)
+        adapter.notifyDataSetChanged()
+        binding.equalizerSurface.setBands(adapter.bands, binding.preampInput.value.toDouble())
+        updateViewState()
+        save()
+        restoringHistory = false
+        updateHistoryButtons()
+    }
+
+    private fun undo() {
+        val previous = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(snapshot())
+        applySerialized(previous)
+    }
+
+    private fun redo() {
+        val next = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(snapshot())
+        applySerialized(next)
+    }
+
+    private fun updateHistoryButtons() {
+        binding.undo.isEnabled = undoStack.isNotEmpty()
+        binding.redo.isEnabled = redoStack.isNotEmpty()
+        binding.undo.alpha = if (undoStack.isNotEmpty()) 1f else 0.4f
+        binding.redo.alpha = if (redoStack.isNotEmpty()) 1f else 0.4f
+    }
+
+    /** Makes the response graph directly editable: drag, pinch, long-press. */
+    private fun setupInteractiveGraph() {
+        val surface = binding.equalizerSurface
+        surface.interactive = true
+
+        surface.onBandsChanged = { bands ->
+            // A drag is one continuous gesture; snapshot only when it starts
+            binding.equalizerSurface.setBands(bands, binding.preampInput.value.toDouble())
+            adapter.notifyDataSetChanged()
+            save()
+        }
+
+        surface.onBandSelected = { index ->
+            val before = snapshot()
+            pushHistory(before)
+            adapter.bands.getOrNull(index)?.let { selectedForEdit = it }
+        }
+
+        surface.onBandAddRequested = { frequency, gain ->
+            pushHistory(snapshot())
+            adapter.bands.add(
+                ParametricEqBand(
+                    frequency.coerceIn(20.0, 20000.0),
+                    gain.coerceIn(-30.0, 30.0),
+                    1.41
+                )
+            )
+            adapter.notifyDataSetChanged()
+            surface.setBands(adapter.bands, binding.preampInput.value.toDouble())
+            updateViewState()
+            save()
+        }
+
+        surface.onBandRemoveRequested = { index ->
+            if (index in adapter.bands.indices) {
+                pushHistory(snapshot())
+                adapter.bands.removeAt(index)
+                adapter.notifyDataSetChanged()
+                surface.setBands(adapter.bands, binding.preampInput.value.toDouble())
+                updateViewState()
+                save()
+            }
+        }
+
+        binding.undo.setOnClickListener { undo() }
+        binding.redo.setOnClickListener { redo() }
+        updateHistoryButtons()
+    }
+
+    private var selectedForEdit: ParametricEqBand? = null
 
     private fun loadBands(savedInstanceState: Bundle?) {
         val bands = ParametricEqBandList()
