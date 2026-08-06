@@ -1,6 +1,11 @@
 package me.timschneeberger.rootlessjamesdsp.utils
 
 import android.content.Context
+import android.text.InputType
+import android.widget.Button
+import android.widget.EditText
+import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.TextViewCompat
 import android.view.DragEvent
 import android.view.Gravity
 import android.view.View
@@ -23,7 +28,7 @@ import me.timschneeberger.rootlessjamesdsp.R
 class EffectLayoutManager(
     private val context: Context,
     private val container: LinearLayout,
-    private val items: List<Item>
+    private val items: MutableList<Item>
 ) {
     /**
      * @param key stable identifier used for persistence
@@ -56,6 +61,35 @@ class EffectLayoutManager(
     }
 
     var onEditModeChanged: ((Boolean) -> Unit)? = null
+
+    private var addGroupButton: Button? = null
+
+    private fun showAddGroupButton() {
+        val button = Button(context).apply {
+            text = context.getString(R.string.effect_group_add)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                val input = EditText(context).apply {
+                    inputType = InputType.TYPE_CLASS_TEXT
+                    setPadding(dp(24), dp(16), dp(24), dp(8))
+                }
+                AlertDialog.Builder(context)
+                    .setTitle(R.string.effect_group_add)
+                    .setView(input)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        val name = input.text.toString().trim()
+                        if (name.isNotEmpty()) addGroup(name)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+        container.addView(button)
+        addGroupButton = button
+    }
 
     // ---------------------------------------------------------------- helpers
 
@@ -104,10 +138,140 @@ class EffectLayoutManager(
         return result
     }
 
+    // ----------------------------------------------------------------- groups
+
+    /** Custom group headers the user created, in the form "key|name;key|name". */
+    private fun storedGroups(): MutableList<Pair<String, String>> {
+        val raw = prefs.getString(KEY_GROUPS, "") ?: ""
+        val list = ArrayList<Pair<String, String>>()
+        raw.split(";").filter { it.isNotBlank() }.forEach { entry ->
+            val parts = entry.split("|", limit = 2)
+            if (parts.size == 2) list.add(parts[0] to parts[1])
+        }
+        return list
+    }
+
+    private fun saveGroups(list: List<Pair<String, String>>) {
+        prefs.edit()
+            .putString(KEY_GROUPS, list.joinToString(";") { "${it.first}|${it.second}" })
+            .apply()
+    }
+
+    /** Display name for a header, honouring any rename the user made. */
+    fun groupName(item: Item): String =
+        prefs.getString(KEY_NAME_PREFIX + item.key, null)
+            ?: storedGroups().firstOrNull { it.first == item.key }?.second
+            ?: context.getString(item.titleRes)
+
+    private fun makeHeaderView(text: String): TextView =
+        TextView(context).apply {
+            id = View.generateViewId()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            gravity = Gravity.CENTER
+            setPadding(0, dp(20), 0, dp(8))
+            this.text = text
+            TextViewCompat.setTextAppearance(
+                this, com.google.android.material.R.style.TextAppearance_Material3_TitleMedium
+            )
+        }
+
+    /** Creates views for any custom groups that don't have one yet. */
+    private fun ensureGroupViews() {
+        storedGroups().forEach { (key, name) ->
+            if (items.any { it.key == key }) return@forEach
+            val view = makeHeaderView(name)
+            container.addView(view)
+            items.add(Item(key, view.id, 0, isHeader = true))
+        }
+        // Refresh titles (renames) on every apply
+        items.filter { it.isHeader }.forEach { item ->
+            (viewFor(item) as? TextView)?.text = groupName(item)
+        }
+    }
+
+    /** The cards that belong to a header: everything until the next header. */
+    private fun membersOf(headerKey: String): List<Item> {
+        val order = containerOrder()
+        val start = order.indexOf(headerKey)
+        if (start < 0) return emptyList()
+        val members = ArrayList<Item>()
+        for (i in start + 1 until order.size) {
+            val item = items.firstOrNull { it.key == order[i] } ?: continue
+            if (item.isHeader) break
+            members.add(item)
+        }
+        return members
+    }
+
+    fun addGroup(name: String) {
+        val list = storedGroups()
+        val key = "group_custom_" + System.currentTimeMillis()
+        list.add(key to name)
+        saveGroups(list)
+        val view = makeHeaderView(name)
+        container.addView(view)
+        items.add(Item(key, view.id, 0, isHeader = true))
+        saveOrderFromContainer()
+        if (editMode) {
+            collapseCard(view, items.last(), false)
+            view.setOnLongClickListener { beginDrag(view); true }
+        }
+    }
+
+    fun renameGroup(item: Item, name: String) {
+        prefs.edit().putString(KEY_NAME_PREFIX + item.key, name).apply()
+        val list = storedGroups()
+        val index = list.indexOfFirst { it.first == item.key }
+        if (index >= 0) {
+            list[index] = item.key to name
+            saveGroups(list)
+        }
+    }
+
+    fun deleteGroup(item: Item) {
+        // Only user-created groups can be removed; cards fall into the group above.
+        if (!item.key.startsWith("group_custom_")) return
+        saveGroups(storedGroups().filterNot { it.first == item.key })
+        prefs.edit().remove(KEY_NAME_PREFIX + item.key).apply()
+        viewFor(item)?.let { container.removeView(it) }
+        items.removeAll { it.key == item.key }
+        saveOrderFromContainer()
+    }
+
+    private fun promptRename(item: Item) {
+        val input = EditText(context).apply {
+            setText(groupName(item))
+            inputType = InputType.TYPE_CLASS_TEXT
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+        }
+        val builder = AlertDialog.Builder(context)
+            .setTitle(R.string.effect_group_rename)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    renameGroup(item, name)
+                    (viewFor(item) as? TextView)?.text = name
+                    editRows[item.key]?.let { row ->
+                        ((row as LinearLayout).getChildAt(1) as? TextView)?.text = name
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+        if (item.key.startsWith("group_custom_")) {
+            builder.setNeutralButton(R.string.effect_group_delete) { _, _ -> deleteGroup(item) }
+        }
+        builder.show()
+    }
+
     // ------------------------------------------------------------------ apply
 
     /** Applies the saved order and visibility to the container. */
     fun applyLayout() {
+        ensureGroupViews()
         val order = storedOrder()
         if (order == null) {
             // Untouched layout: keep the declared order as-is
@@ -135,7 +299,11 @@ class EffectLayoutManager(
     }
 
     private fun applyVisibility() {
-        val hidden = hiddenKeys()
+        val hidden = HashSet(hiddenKeys())
+        // A hidden group takes its cards with it
+        items.filter { it.isHeader && hidden.contains(it.key) }.forEach { header ->
+            membersOf(header.key).forEach { hidden.add(it.key) }
+        }
         items.forEach { item ->
             viewFor(item)?.isVisible = editMode || !hidden.contains(item.key)
         }
@@ -171,6 +339,7 @@ class EffectLayoutManager(
         }
 
         container.setOnDragListener(dragListener)
+        showAddGroupButton()
         onEditModeChanged?.invoke(true)
     }
 
@@ -189,6 +358,8 @@ class EffectLayoutManager(
         }
 
         container.setOnDragListener(null)
+        addGroupButton?.let { container.removeView(it) }
+        addGroupButton = null
         saveOrderFromContainer()
         applyVisibility()
         onEditModeChanged?.invoke(false)
@@ -196,6 +367,16 @@ class EffectLayoutManager(
 
     /** Replaces the card's content with a compact one-line editing row. */
     private fun collapseCard(view: View, item: Item, isHidden: Boolean) {
+        if (item.isHeader) {
+            // Headers aren't containers - show the editing affordances inline
+            (view as? TextView)?.let { header ->
+                header.text = context.getString(R.string.effect_group_header_editing, groupName(item))
+                header.setOnClickListener { promptRename(item) }
+                header.alpha = if (isHidden) 0.45f else 1f
+            }
+            return
+        }
+
         val group = view as? ViewGroup ?: return
 
         if (!item.isHeader) {
@@ -246,6 +427,15 @@ class EffectLayoutManager(
             )
             (row.getChildAt(1) as? TextView)?.alpha = if (nowHidden) 0.45f else 1f
         }
+        if (item.isHeader) {
+            val rename = ImageButton(context).apply {
+                setImageResource(R.drawable.ic_twotone_edit_24dp)
+                background = null
+                layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            }
+            rename.setOnClickListener { promptRename(item) }
+            row.addView(rename)
+        }
         row.addView(eye)
 
         group.addView(row)
@@ -257,7 +447,12 @@ class EffectLayoutManager(
         if (!item.isHeader) {
             container.findViewById<View>(item.viewId)?.isVisible = true
         } else {
-            (view as? TextView)?.alpha = 1f
+            (view as? TextView)?.let {
+                it.alpha = 1f
+                it.text = groupName(item)
+                it.setOnClickListener(null)
+                it.isClickable = false
+            }
         }
     }
 
@@ -313,6 +508,8 @@ class EffectLayoutManager(
         private const val PREFS = "effect_layout"
         private const val KEY_ORDER = "order"
         private const val KEY_HIDDEN = "hidden"
+        private const val KEY_GROUPS = "groups"
+        private const val KEY_NAME_PREFIX = "name_"
         private const val KEY_SCHEMA = "schema"
         private const val SCHEMA_VERSION = 2
     }

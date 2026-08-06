@@ -35,7 +35,11 @@ class SettingsAboutFragment : SettingsBaseFragment() {
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.app_about_preferences, rootKey)
 
-        version?.summary = BuildConfig.VERSION_NAME
+        version?.summary = getString(
+            R.string.about_version_summary,
+            BuildConfig.VERSION_NAME,
+            BuildConfig.UPSTREAM_VERSION
+        )
         buildInfo?.isVisible = BuildConfig.DEBUG || BuildConfig.PREVIEW || isPlugin()
         val type = if(BuildConfig.PREVIEW)
             "Preview"
