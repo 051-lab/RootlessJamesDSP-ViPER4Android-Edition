@@ -31,6 +31,32 @@ class SettingsTroubleshootingFragment : SettingsBaseFragment() {
         preferenceManager.sharedPreferencesName = Constants.PREF_APP
         setPreferencesFromResource(R.xml.app_troubleshooting_preferences, rootKey)
 
+        findPreference<Preference>(getString(R.string.key_troubleshooting_crashlog))?.setOnPreferenceClickListener {
+            val history = java.io.File(requireContext().filesDir, "crash_history.txt")
+            val text = if (history.exists()) history.readText().trim() else ""
+            if (text.isEmpty()) {
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.crash_log_title)
+                    .setMessage(R.string.crash_log_empty)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            } else {
+                try {
+                    val cm = requireContext()
+                        .getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                            as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("crashlog", text))
+                } catch (_: Exception) {}
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.crash_log_title)
+                    .setMessage(text.takeLast(3500))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .setNegativeButton(R.string.crash_clear) { _, _ -> history.delete() }
+                    .show()
+            }
+            true
+        }
+
         findPreference<Preference>(getString(R.string.key_troubleshooting_dump))?.setOnPreferenceClickListener {
             val debug = dumpManager.collectDebugDumps()
             val path = File(requireContext().filesDir, "dump.txt")

@@ -135,8 +135,18 @@ open class MainApplication : Application(), SharedPreferences.OnSharedPreference
             val prev = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { t, e ->
                 try {
-                    java.io.File(filesDir, "last_crash.txt")
-                        .writeText("thread=" + t.name + "\n" + android.util.Log.getStackTraceString(e))
+                    val trace = "thread=" + t.name + "\n" +
+                            android.util.Log.getStackTraceString(e)
+                    java.io.File(filesDir, "last_crash.txt").writeText(trace)
+                    // Durable copy: the one-shot dialog deletes last_crash.txt when
+                    // dismissed, so keep a history that survives for later retrieval
+                    // from Settings.
+                    val history = java.io.File(filesDir, "crash_history.txt")
+                    val stamp = java.text.SimpleDateFormat(
+                        "yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH
+                    ).format(java.util.Date())
+                    val previous = if (history.exists()) history.readText().takeLast(60000) else ""
+                    history.writeText(previous + "\n===== " + stamp + " (JVM) =====\n" + trace)
                 } catch (_: Exception) {}
                 prev?.uncaughtException(t, e)
             }

@@ -160,10 +160,20 @@ class MainActivity : BaseActivity() {
                     val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("crashlog", txt.toString()))
                 } catch (_: Exception) {}
+                // Keep a durable copy before the one-shot files are cleared
+                try {
+                    val history = java.io.File(filesDir, "crash_history.txt")
+                    if (nat.exists()) {
+                        val previous = if (history.exists()) history.readText().takeLast(60000) else ""
+                        history.writeText(previous + "\n===== native =====\n" + nat.readText())
+                    }
+                } catch (_: Exception) {}
+
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Crash log (copied to clipboard)")
                     .setMessage(txt.toString().take(3500))
                     .setPositiveButton(android.R.string.ok) { _, _ -> crash.delete(); nat.delete() }
+                    .setNeutralButton(R.string.crash_keep) { _, _ -> }
                     .setCancelable(true)
                     .show()
             }

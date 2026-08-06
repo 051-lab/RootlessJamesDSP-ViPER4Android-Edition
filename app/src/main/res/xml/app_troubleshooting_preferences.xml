@@ -18,6 +18,17 @@
             android:title="@string/troubleshooting_notification_access"
             android:summary="@string/troubleshooting_notification_access_summary"
             app:iconSpaceReserved="false" />
+
+        <Preference
+
+            android:key="@string/key_troubleshooting_crashlog"
+
+            android:title="@string/crash_log_title"
+
+            android:summary="@string/crash_log_summary"
+
+            app:iconSpaceReserved="false" />
+
         <Preference
             android:key="@string/key_troubleshooting_dump"
             android:title="@string/troubleshooting_dump"
