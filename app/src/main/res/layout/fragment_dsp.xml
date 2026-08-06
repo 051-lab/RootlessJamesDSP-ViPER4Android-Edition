@@ -26,9 +26,15 @@
             android:layout_marginHorizontal="1dp"
             app:cardBackgroundColor="?attr/colorSurfaceVariant">
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
             <EditText
                 android:id="@+id/search_input"
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:background="@null"
                 android:drawableStart="@drawable/ic_twotone_search_24dp"
@@ -40,7 +46,18 @@
                 android:paddingHorizontal="16dp"
                 android:paddingVertical="14dp"
                 android:textColorHint="?android:attr/textColorSecondary"
-                android:importantForAutofill="no" />
+                android:importantForAutofill="no"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@+id/edit_layout_button"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/effect_edit_layout"
+                android:src="@drawable/ic_twotone_edit_24dp" />
+            </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <TextView

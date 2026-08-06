@@ -17,6 +17,8 @@ import kotlinx.coroutines.launch
 import me.timschneeberger.rootlessjamesdsp.R
 import me.timschneeberger.rootlessjamesdsp.databinding.FragmentDspBinding
 import me.timschneeberger.rootlessjamesdsp.utils.Constants
+import me.timschneeberger.rootlessjamesdsp.utils.EffectLayoutManager
+import com.google.android.material.snackbar.Snackbar
 import me.timschneeberger.rootlessjamesdsp.utils.preferences.Preferences
 import org.koin.android.ext.android.inject
 import timber.log.Timber
@@ -27,6 +29,7 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
     private val prefsVar: Preferences.Var by inject()
 
     private lateinit var binding: FragmentDspBinding
+    private var layoutManager: EffectLayoutManager? = null
     private var updateNoticeOnClick: (() -> Unit)? = null
     private var updateNoticeOnCloseClick: (() -> Unit)? = null
 
@@ -189,6 +192,7 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
         }
 
         setupEffectSearch()
+        setupLayoutCustomizer()
 
 
         return binding.root
@@ -287,7 +291,10 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
             val card = binding.root.findViewById<View>(entry.cardId)?.parent as? View
             if (card != null) {
                 val title = getString(entry.titleRes).lowercase(Locale.getDefault())
-                val visible = !searching || title.contains(q)
+                val userHidden = layoutManager?.isHidden(
+                    resources.getResourceEntryName(entry.cardId)
+                ) == true
+                val visible = !userHidden && (!searching || title.contains(q))
                 card.isVisible = visible
                 if (visible && searching) matches++
             }
@@ -312,6 +319,53 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
                 binding.dspScrollview.scrollTo(0, h)
             }
         }
+    }
+
+
+    private fun setupLayoutCustomizer() {
+        val entries = ArrayList<EffectLayoutManager.Item>()
+        entries.add(
+            EffectLayoutManager.Item(
+                "group_v4a", R.id.v4a_section_header, R.string.v4a_section_header, isHeader = true
+            )
+        )
+        searchableCards.forEach { card ->
+            entries.add(
+                EffectLayoutManager.Item(
+                    resources.getResourceEntryName(card.cardId), card.cardId, card.titleRes
+                )
+            )
+        }
+
+        val manager = EffectLayoutManager(requireContext(), binding.cardContainer, entries)
+        layoutManager = manager
+        manager.applyLayout()
+
+        manager.onEditModeChanged = { editing ->
+            binding.editLayoutButton.setImageResource(
+                if (editing) R.drawable.ic_twotone_check_24dp else R.drawable.ic_twotone_edit_24dp
+            )
+            binding.searchInput.isVisible = !editing
+            if (editing) {
+                Snackbar.make(binding.root, R.string.effect_edit_hint, Snackbar.LENGTH_LONG).show()
+            }
+        }
+
+        binding.editLayoutButton.setOnClickListener {
+            if (!manager.editMode) {
+                binding.searchInput.setText("")
+                applyEffectSearch("")
+            }
+            manager.toggleEditMode()
+        }
+    }
+
+    /** Lets the host activity close edit mode with the back button. */
+    fun exitEditModeIfActive(): Boolean {
+        val manager = layoutManager ?: return false
+        if (!manager.editMode) return false
+        manager.exitEditMode()
+        return true
     }
 
 }
