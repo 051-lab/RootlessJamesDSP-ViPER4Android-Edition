@@ -97,6 +97,20 @@ typedef struct
 {
 	float sideGain, midGain;
 } FieldSurround;
+#define ECHO_BUFLEN 131072
+#define ECHO_APLEN 2048
+typedef struct
+{
+	float bufL[ECHO_BUFLEN], bufR[ECHO_BUFLEN];
+	float apL[ECHO_APLEN], apR[ECHO_APLEN];
+	int widx, diffDelay;
+	float fs, delaySamples, feedback;
+	int model, filterType;
+	float stereoSpread, wet, dry;
+	float svfF, svfQ, svfLp[2], svfBp[2];
+	float modRate, modDepth, modInc, modPhase;
+	float diffusion, satDrive;
+} EchoDelay;
 typedef struct
 {
 	float buf[2][8192];
@@ -549,6 +563,7 @@ enum JdspEffectId
 	JDSP_EFX_SPEAKEROPT,
 	JDSP_EFX_REVERB,
 	JDSP_EFX_VREVERB,
+	JDSP_EFX_ECHODELAY,
 	JDSP_EFX_COUNT
 };
 typedef struct
@@ -711,6 +726,8 @@ typedef struct dspsys
 	SpeakerOpt speakerOpt;
 	int pitchShiftEnabled;
 	PitchShift pitchShift;
+	int echoDelayEnabled;
+	EchoDelay echoDelay;
 	// Crossfeed
 	int crossfeedEnabled, crossfeedForceRefresh;
 	Crossfeed advXF;
@@ -851,6 +868,13 @@ extern void PitchShiftSetParam(JamesDSPLib *jdsp, float semitones, float mixPct)
 extern void PitchShiftProcess(JamesDSPLib *jdsp, size_t n);
 extern void PitchShiftEnable(JamesDSPLib *jdsp);
 extern void PitchShiftDisable(JamesDSPLib *jdsp);
+extern void EchoDelaySetParam(JamesDSPLib *jdsp, float timeMs, float feedbackPct,
+	int model, float stereoPct, float cutoffHz, float resonance, int filterType,
+	float modRateHz, float modDepthPct, float diffusionPct,
+	float satPct, float wetPct, float dryPct);
+extern void EchoDelayProcess(JamesDSPLib *jdsp, size_t n);
+extern void EchoDelayEnable(JamesDSPLib *jdsp);
+extern void EchoDelayDisable(JamesDSPLib *jdsp);
 // Compressor
 extern void CompressorConstructor(JamesDSPLib *jdsp);
 extern void CompressorDestructor(JamesDSPLib *jdsp);

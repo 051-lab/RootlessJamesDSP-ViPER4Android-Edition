@@ -317,7 +317,7 @@ static const int jdspDefaultChain[] =
 	JDSP_EFX_LIVEPROG4, JDSP_EFX_CROSSFEED, JDSP_EFX_CURE,
 	JDSP_EFX_STEREOWIDE, JDSP_EFX_FIELDSURROUND, JDSP_EFX_HPSURROUND,
 	JDSP_EFX_SPECTRUMEXT, JDSP_EFX_CLARITY, JDSP_EFX_AGC,
-	JDSP_EFX_SPEAKEROPT, JDSP_EFX_REVERB, JDSP_EFX_VREVERB
+	JDSP_EFX_SPEAKEROPT, JDSP_EFX_REVERB, JDSP_EFX_VREVERB, JDSP_EFX_ECHODELAY
 };
 
 void JamesDSPResetChainOrder(JamesDSPLib *jdsp)
@@ -454,6 +454,9 @@ static void jdspDispatchEffect(JamesDSPLib *jdsp, int id, size_t n)
 		break;
 	case JDSP_EFX_VREVERB:
 		if (jdsp->vreverbEnabled) VReverbProcess(jdsp, n);
+		break;
+	case JDSP_EFX_ECHODELAY:
+		if (jdsp->echoDelayEnabled) EchoDelayProcess(jdsp, n);
 		break;
 	default:
 		break;
@@ -1249,6 +1252,9 @@ void JamesDSPInit(JamesDSPLib *jdsp, int n, float sample_rate)
 	SpeakerOptSetParam(jdsp, 60.0f);
 	jdsp->pitchShiftEnabled = 0;
 	PitchShiftSetParam(jdsp, 0.0f, 100.0f);
+	jdsp->echoDelayEnabled = 0;
+	EchoDelaySetParam(jdsp, 350.0f, 40.0f, 1, 50.0f, 12000.0f, 10.0f, 0,
+		0.0f, 0.0f, 0.0f, 0.0f, 35.0f, 100.0f);
 	for (int i = 0; i < JDSP_LIVEPROG_EXTRA; i++)
 		jdsp->liveprogExtraEnabled[i] = 0;
 	JamesDSPResetChainOrder(jdsp);

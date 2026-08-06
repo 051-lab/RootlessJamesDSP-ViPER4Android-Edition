@@ -138,6 +138,10 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
                     R.xml.dsp_pitchshift_preferences
                 ))
             .replace(
+                R.id.card_echo, PreferenceGroupFragment.newInstance(Constants.PREF_ECHODELAY,
+                    R.xml.dsp_echo_preferences
+                ))
+            .replace(
                 R.id.card_liveprog2, PreferenceGroupFragment.newInstance(Constants.PREF_LIVEPROG2,
                     R.xml.dsp_liveprog2_preferences
                 ))
@@ -280,6 +284,7 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
         CardEntry(R.id.card_vreverb, R.string.vreverb_enable),
         CardEntry(R.id.card_speakeropt, R.string.speakeropt_enable),
         CardEntry(R.id.card_pitchshift, R.string.pitchshift_enable),
+        CardEntry(R.id.card_echo, R.string.echo_enable),
         CardEntry(R.id.card_agc, R.string.v4a_agc_title),
         CardEntry(R.id.card_eq, R.string.v4a_eq_title),
         CardEntry(R.id.card_geq, R.string.geq_enable),

@@ -145,6 +145,14 @@ class JamesDspLocalEngine(context: Context, callbacks: JamesDspWrapper.JamesDspC
         return JamesDspWrapper.setSpeakerOpt(handle, enable, strength)
     }
 
+    override fun setEchoDelay(enable: Boolean, time: Float, feedback: Float, model: Int,
+                              stereo: Float, cutoff: Float, resonance: Float, filterType: Int,
+                              modRate: Float, modDepth: Float, diffusion: Float,
+                              saturation: Float, wet: Float, dry: Float): Boolean {
+        return JamesDspWrapper.setEchoDelay(handle, enable, time, feedback, model, stereo,
+            cutoff, resonance, filterType, modRate, modDepth, diffusion, saturation, wet, dry)
+    }
+
     override fun setPitchShift(enable: Boolean, semitones: Float, mix: Float): Boolean {
         return JamesDspWrapper.setPitchShift(handle, enable, semitones, mix)
     }

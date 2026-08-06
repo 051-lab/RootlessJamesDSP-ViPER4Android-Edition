@@ -156,6 +156,22 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
 
             applyChainOrder()
 
+            cache.select(Constants.PREF_ECHODELAY)
+            val echoEnabled = cache.get(R.string.key_echo_enable, false)
+            val echoTime = cache.get(R.string.key_echo_time, 350f)
+            val echoFeedback = cache.get(R.string.key_echo_feedback, 40f)
+            val echoModel = cache.get(R.string.key_echo_model, "1").toInt()
+            val echoStereo = cache.get(R.string.key_echo_stereo, 50f)
+            val echoCutoff = cache.get(R.string.key_echo_cutoff, 12000f)
+            val echoResonance = cache.get(R.string.key_echo_resonance, 10f)
+            val echoFilter = cache.get(R.string.key_echo_filter, "0").toInt()
+            val echoModRate = cache.get(R.string.key_echo_mod_rate, 0f)
+            val echoModDepth = cache.get(R.string.key_echo_mod_depth, 0f)
+            val echoDiffusion = cache.get(R.string.key_echo_diffusion, 0f)
+            val echoSaturation = cache.get(R.string.key_echo_saturation, 0f)
+            val echoWet = cache.get(R.string.key_echo_wet, 35f)
+            val echoDry = cache.get(R.string.key_echo_dry, 100f)
+
             cache.select(Constants.PREF_PITCHSHIFT)
             val psEnabled = cache.get(R.string.key_pitchshift_enable, false)
             val psSemitones = cache.get(R.string.key_pitchshift_semitones, 0f)
@@ -249,6 +265,11 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
                     Constants.PREF_VREVERB -> setVReverb(vrEnabled, vrRoom, vrDamp, vrWidth, vrWet, vrDry)
                     Constants.PREF_SPEAKEROPT -> setSpeakerOpt(soEnabled, soStrength)
                     Constants.PREF_PITCHSHIFT -> setPitchShift(psEnabled, psSemitones, psMix)
+                    Constants.PREF_ECHODELAY -> setEchoDelay(
+                        echoEnabled, echoTime, echoFeedback, echoModel, echoStereo,
+                        echoCutoff, echoResonance, echoFilter, echoModRate, echoModDepth,
+                        echoDiffusion, echoSaturation, echoWet, echoDry
+                    )
                     Constants.PREF_SPECTRUMEXT -> setSpectrumExtension(spxEnabled, spxBark, spxStrength)
                     Constants.PREF_EQ -> setMultiEqualizer(eqEnabled, eqFilterType, eqInterpolationMode, eqBands)
                     Constants.PREF_GEQ -> setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
@@ -567,6 +588,10 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
     abstract fun setVReverb(enable: Boolean, room: Float, damp: Float, width: Float, wet: Float, dry: Float): Boolean
     abstract fun setSpeakerOpt(enable: Boolean, strength: Float): Boolean
     abstract fun setPitchShift(enable: Boolean, semitones: Float, mix: Float): Boolean
+    abstract fun setEchoDelay(enable: Boolean, time: Float, feedback: Float, model: Int,
+                              stereo: Float, cutoff: Float, resonance: Float, filterType: Int,
+                              modRate: Float, modDepth: Float, diffusion: Float,
+                              saturation: Float, wet: Float, dry: Float): Boolean
     abstract fun setChainOrder(order: IntArray?): Boolean
 
     abstract fun setSpectrumExtension(enable: Boolean, barkFreq: Float, strength: Float): Boolean

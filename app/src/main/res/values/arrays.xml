@@ -497,4 +497,21 @@
     <string-array name="viperbass_modes_values" translatable="false">
         <item>0</item><item>1</item><item>2</item>
     </string-array>
+    <string-array name="echo_models">
+        <item>@string/echo_model_mono</item>
+        <item>@string/echo_model_stereo</item>
+        <item>@string/echo_model_pingpong</item>
+    </string-array>
+    <string-array name="echo_models_values" translatable="false">
+        <item>0</item><item>1</item><item>2</item>
+    </string-array>
+    <string-array name="echo_filters">
+        <item>@string/echo_filter_lp</item>
+        <item>@string/echo_filter_hp</item>
+        <item>@string/echo_filter_bp</item>
+        <item>@string/echo_filter_off</item>
+    </string-array>
+    <string-array name="echo_filters_values" translatable="false">
+        <item>0</item><item>1</item><item>2</item><item>3</item>
+    </string-array>
 </resources>

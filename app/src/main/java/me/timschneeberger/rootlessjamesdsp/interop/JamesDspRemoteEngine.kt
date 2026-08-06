@@ -157,6 +157,11 @@ class JamesDspRemoteEngine(
 
     override fun setSpeakerOpt(enable: Boolean, strength: Float): Boolean = true
 
+    override fun setEchoDelay(enable: Boolean, time: Float, feedback: Float, model: Int,
+                              stereo: Float, cutoff: Float, resonance: Float, filterType: Int,
+                              modRate: Float, modDepth: Float, diffusion: Float,
+                              saturation: Float, wet: Float, dry: Float): Boolean = true
+
     override fun setPitchShift(enable: Boolean, semitones: Float, mix: Float): Boolean = true
 
     override fun setChainOrder(order: IntArray?): Boolean = true

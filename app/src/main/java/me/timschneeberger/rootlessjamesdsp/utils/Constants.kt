@@ -38,6 +38,7 @@ object Constants {
     const val PREF_VREVERB = "dsp_vreverb"
     const val PREF_SPEAKEROPT = "dsp_speakeropt"
     const val PREF_PITCHSHIFT = "dsp_pitchshift"
+    const val PREF_ECHODELAY = "dsp_echodelay"
     const val PREF_CHAIN_ORDER = "dsp_chain_order"
     const val KEY_CHAIN_ORDER = "order"
 

@@ -207,6 +207,20 @@
     <string name="key_vreverb_dry" translatable="false">vreverb_dry</string>
     <string name="key_speakeropt_enable" translatable="false">speakeropt_enable</string>
     <string name="key_speakeropt_strength" translatable="false">speakeropt_strength</string>
+    <string name="key_echo_enable" translatable="false">echo_enable</string>
+    <string name="key_echo_time" translatable="false">echo_time</string>
+    <string name="key_echo_feedback" translatable="false">echo_feedback</string>
+    <string name="key_echo_model" translatable="false">echo_model</string>
+    <string name="key_echo_stereo" translatable="false">echo_stereo</string>
+    <string name="key_echo_cutoff" translatable="false">echo_cutoff</string>
+    <string name="key_echo_resonance" translatable="false">echo_resonance</string>
+    <string name="key_echo_filter" translatable="false">echo_filter</string>
+    <string name="key_echo_mod_rate" translatable="false">echo_mod_rate</string>
+    <string name="key_echo_mod_depth" translatable="false">echo_mod_depth</string>
+    <string name="key_echo_diffusion" translatable="false">echo_diffusion</string>
+    <string name="key_echo_saturation" translatable="false">echo_saturation</string>
+    <string name="key_echo_wet" translatable="false">echo_wet</string>
+    <string name="key_echo_dry" translatable="false">echo_dry</string>
     <string name="key_pitchshift_enable" translatable="false">pitchshift_enable</string>
     <string name="key_pitchshift_semitones" translatable="false">pitchshift_semitones</string>
     <string name="key_pitchshift_mix" translatable="false">pitchshift_mix</string>

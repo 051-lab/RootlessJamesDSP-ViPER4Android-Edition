@@ -480,6 +480,19 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setChainOrder(J
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setEchoDelay(JNIEnv *env, jobject obj, jlong self,
+        jboolean enable, jfloat time, jfloat feedback, jint model, jfloat stereo,
+        jfloat cutoff, jfloat resonance, jint filterType, jfloat modRate, jfloat modDepth,
+        jfloat diffusion, jfloat saturation, jfloat wet, jfloat dry)
+{
+    DECLARE_DSP_B
+    EchoDelaySetParam(dsp, time, feedback, model, stereo, cutoff, resonance, filterType,
+                      modRate, modDepth, diffusion, saturation, wet, dry);
+    if (enable) EchoDelayEnable(dsp); else EchoDelayDisable(dsp);
+    return true;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setPitchShift(JNIEnv *env, jobject obj, jlong self, jboolean enable, jfloat semitones, jfloat mix)
 {
     DECLARE_DSP_B
