@@ -590,7 +590,7 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
             ?.split(",")
             ?.mapNotNull { it.trim().toIntOrNull() }
             ?.toIntArray()
-        setChainOrder(if (order.isNullOrEmpty()) null else order)
+        setChainOrder(if (order == null || order.isEmpty()) null else order)
     }
 
 }
