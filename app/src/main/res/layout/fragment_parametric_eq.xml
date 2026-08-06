@@ -201,46 +201,49 @@
                         android:layout_marginTop="16dp"
                         android:orientation="vertical">
 
-                        <me.timschneeberger.rootlessjamesdsp.view.NumberInputBox
-                            android:id="@+id/freqInput"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            app:helperText="@string/peq_frequency_range"
-                            app:helperTextEnabled="true"
-                            app:hintText="@string/peq_frequency"
-                            app:step="10"
-                            app:suffixText="Hz"
-                            app:value="1000"
-                            app:floatPrecision="1"
-                            android:min="20"
-                            android:max="20000" />
+                            android:orientation="horizontal"
+                            android:baselineAligned="false">
 
-                        <me.timschneeberger.rootlessjamesdsp.view.NumberInputBox
-                            android:id="@+id/gainInput"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            app:helperText="@string/peq_gain_range"
-                            app:helperTextEnabled="true"
-                            app:hintText="@string/peq_gain"
-                            app:floatPrecision="2"
-                            app:step="0.5"
-                            app:suffixText="dB"
-                            app:value="0"
-                            android:min="-30"
-                            android:max="30"/>
+                            <me.timschneeberger.rootlessjamesdsp.view.KnobView
+                                android:id="@+id/freqInput"
+                                android:layout_width="0dp"
+                                android:layout_height="112dp"
+                                android:layout_weight="1"
+                                app:knobLabel="@string/peq_frequency"
+                                app:knobLogScale="true"
+                                app:knobMax="20000"
+                                app:knobMin="20"
+                                app:knobPrecision="0"
+                                app:knobUnit="Hz"
+                                app:knobValue="1000" />
 
-                        <me.timschneeberger.rootlessjamesdsp.view.NumberInputBox
-                            android:id="@+id/qInput"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            app:helperText="@string/peq_q_range"
-                            app:helperTextEnabled="true"
-                            app:hintText="@string/peq_q_factor"
-                            app:floatPrecision="2"
-                            app:step="0.1"
-                            app:value="1.41"
-                            android:min="0"
-                            android:max="30" />
+                            <me.timschneeberger.rootlessjamesdsp.view.KnobView
+                                android:id="@+id/qInput"
+                                android:layout_width="0dp"
+                                android:layout_height="112dp"
+                                android:layout_weight="1"
+                                app:knobLabel="@string/peq_q_factor"
+                                app:knobMax="30"
+                                app:knobMin="0.1"
+                                app:knobPrecision="2"
+                                app:knobValue="1.41" />
+
+                            <me.timschneeberger.rootlessjamesdsp.view.KnobView
+                                android:id="@+id/gainInput"
+                                android:layout_width="0dp"
+                                android:layout_height="112dp"
+                                android:layout_weight="1"
+                                app:knobLabel="@string/peq_gain"
+                                app:knobMax="30"
+                                app:knobMin="-30"
+                                app:knobPrecision="1"
+                                app:knobUnit="dB"
+                                app:knobValue="0" />
+                        </LinearLayout>
+
 
                         <TextView
                             android:layout_width="wrap_content"

@@ -57,4 +57,13 @@
         <attr name="helperText" format="string" />
         <attr name="helperTextEnabled" format="boolean" />
     </declare-styleable>
+    <declare-styleable name="KnobView">
+        <attr name="knobMin" format="float" />
+        <attr name="knobMax" format="float" />
+        <attr name="knobValue" format="float" />
+        <attr name="knobPrecision" format="integer" />
+        <attr name="knobUnit" format="string" />
+        <attr name="knobLabel" format="string" />
+        <attr name="knobLogScale" format="boolean" />
+    </declare-styleable>
 </resources>

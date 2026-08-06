@@ -192,26 +192,7 @@ class ParametricEqualizerFragment : Fragment() {
         binding.filterTypeGroup.addOnButtonCheckedListener { _, _, isChecked ->
             if (isChecked) editorApply()
         }
-
-        binding.freqInput.customStepScale = { value: Float, _: Boolean ->
-            when (value) {
-                in 0f..400f -> 10f
-                in 400f..600f -> 20f
-                in 600f..1000f -> 50f
-                in 1000f..5000f -> 100f
-                in 5000f..Float.MAX_VALUE -> 500f
-                else -> 10f
-            }
         }
-
-        binding.qInput.customStepScale = { value: Float, _: Boolean ->
-            when (value) {
-                in 0f..1f -> 0.05f
-                in 1f..5f -> 0.1f
-                in 5f..10f -> 0.5f
-                in 10f..Float.MAX_VALUE -> 1f
-                else -> 0.1f
-            }
         }
 
         binding.confirm.setOnClickListener {
