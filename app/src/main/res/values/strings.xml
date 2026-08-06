@@ -284,6 +284,13 @@
     <string name="hpsurround_strength">Effect strength</string>
     <string name="hpsurround_room">Room reflections</string>
     <string name="about_version_summary">%1$s (based on RootlessJamesDSP %2$s)</string>
+    <string name="chain_order_title">Processing order</string>
+    <string name="chain_order_explainer">This is the order effects are applied to the audio — not the card order on screen. The output limiter always runs last.</string>
+    <string name="chain_order_reset">Reset</string>
+    <string name="chain_order_button">Processing order…</string>
+    <string name="liveprog_slot_2">Liveprog script 2</string>
+    <string name="liveprog_slot_3">Liveprog script 3</string>
+    <string name="liveprog_slot_4">Liveprog script 4</string>
     <string name="effect_group_add">Add group</string>
     <string name="effect_group_rename">Rename group</string>
     <string name="effect_group_delete">Delete group</string>

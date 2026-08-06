@@ -149,6 +149,10 @@ class JamesDspLocalEngine(context: Context, callbacks: JamesDspWrapper.JamesDspC
         return JamesDspWrapper.setPitchShift(handle, enable, semitones, mix)
     }
 
+    override fun setChainOrder(order: IntArray?): Boolean {
+        return JamesDspWrapper.setChainOrder(handle, order)
+    }
+
     override fun setSpectrumExtension(enable: Boolean, barkFreq: Float, strength: Float): Boolean {
         return JamesDspWrapper.setSpectrumExtension(handle, enable, barkFreq, strength)
     }

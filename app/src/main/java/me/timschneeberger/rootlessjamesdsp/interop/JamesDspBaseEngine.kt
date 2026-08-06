@@ -154,6 +154,8 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
             val soEnabled = cache.get(R.string.key_speakeropt_enable, false)
             val soStrength = cache.get(R.string.key_speakeropt_strength, 60f)
 
+            applyChainOrder()
+
             cache.select(Constants.PREF_PITCHSHIFT)
             val psEnabled = cache.get(R.string.key_pitchshift_enable, false)
             val psSemitones = cache.get(R.string.key_pitchshift_semitones, 0f)
@@ -532,6 +534,7 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
     abstract fun setVReverb(enable: Boolean, room: Float, damp: Float, width: Float, wet: Float, dry: Float): Boolean
     abstract fun setSpeakerOpt(enable: Boolean, strength: Float): Boolean
     abstract fun setPitchShift(enable: Boolean, semitones: Float, mix: Float): Boolean
+    abstract fun setChainOrder(order: IntArray?): Boolean
 
     abstract fun setSpectrumExtension(enable: Boolean, barkFreq: Float, strength: Float): Boolean
     abstract fun setReverb(enable: Boolean, preset: Int): Boolean
@@ -577,6 +580,19 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
         private val dfMergeFreq = java.text.DecimalFormat("0.00", java.text.DecimalFormatSymbols.getInstance(java.util.Locale.ENGLISH))
         private val dfMergeGain = java.text.DecimalFormat("0.000000", java.text.DecimalFormatSymbols.getInstance(java.util.Locale.ENGLISH))
     }
+
+    /** Pushes the user's processing order (if any) down to the engine. */
+    fun applyChainOrder() {
+        val saved = context
+            .getSharedPreferences(Constants.PREF_CHAIN_ORDER, Context.MODE_PRIVATE)
+            .getString(Constants.KEY_CHAIN_ORDER, null)
+        val order = saved
+            ?.split(",")
+            ?.mapNotNull { it.trim().toIntOrNull() }
+            ?.toIntArray()
+        setChainOrder(if (order.isNullOrEmpty()) null else order)
+    }
+
 }
 
 // x1, x2, y1, y2, sideGainX, sideGainY — from the ViperFX DynamicBass presets

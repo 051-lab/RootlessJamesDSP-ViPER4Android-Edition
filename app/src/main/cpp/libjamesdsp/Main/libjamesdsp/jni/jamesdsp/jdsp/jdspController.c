@@ -306,87 +306,166 @@ void jdsp_unlock(JamesDSPLib *jdsp)
 	if (jdsp->isMutexSuccess)
 		pthread_mutex_unlock(&jdsp->m_in_processing);
 }
+// Default processing order, matching the classic fixed chain
+static const int jdspDefaultChain[] =
+{
+	JDSP_EFX_TUBE, JDSP_EFX_COMPRESSOR, JDSP_EFX_PITCHSHIFT, JDSP_EFX_FETCOMP,
+	JDSP_EFX_DIFFSURROUND, JDSP_EFX_BASSBOOST, JDSP_EFX_VDYNBASS,
+	JDSP_EFX_VIPERBASS, JDSP_EFX_BASSEX, JDSP_EFX_EQUALIZER,
+	JDSP_EFX_ARBITRARYMAG, JDSP_EFX_CONVOLVER, JDSP_EFX_DDC,
+	JDSP_EFX_LIVEPROG, JDSP_EFX_LIVEPROG2, JDSP_EFX_LIVEPROG3,
+	JDSP_EFX_LIVEPROG4, JDSP_EFX_CROSSFEED, JDSP_EFX_CURE,
+	JDSP_EFX_STEREOWIDE, JDSP_EFX_FIELDSURROUND, JDSP_EFX_HPSURROUND,
+	JDSP_EFX_SPECTRUMEXT, JDSP_EFX_CLARITY, JDSP_EFX_AGC,
+	JDSP_EFX_SPEAKEROPT, JDSP_EFX_REVERB, JDSP_EFX_VREVERB
+};
+
+void JamesDSPResetChainOrder(JamesDSPLib *jdsp)
+{
+	int count = (int)(sizeof(jdspDefaultChain) / sizeof(jdspDefaultChain[0]));
+	if (count > JDSP_EFX_MAX)
+		count = JDSP_EFX_MAX;
+	for (int i = 0; i < count; i++)
+		jdsp->chainOrder[i] = jdspDefaultChain[i];
+	jdsp->chainCount = count;
+}
+
+void JamesDSPSetChainOrder(JamesDSPLib *jdsp, const int *order, int count)
+{
+	if (!order || count <= 0)
+	{
+		JamesDSPResetChainOrder(jdsp);
+		return;
+	}
+	if (count > JDSP_EFX_MAX)
+		count = JDSP_EFX_MAX;
+	int written = 0;
+	for (int i = 0; i < count; i++)
+	{
+		int id = order[i];
+		if (id < 0 || id >= JDSP_EFX_COUNT)
+			continue;
+		jdsp->chainOrder[written++] = id;
+	}
+	if (!written)
+	{
+		JamesDSPResetChainOrder(jdsp);
+		return;
+	}
+	jdsp->chainCount = written;
+}
+
+// Runs a single effect if it is enabled. Convolver, DDC and Liveprog touch
+// state that can be swapped from another thread, so they take the lock.
+static void jdspDispatchEffect(JamesDSPLib *jdsp, int id, size_t n)
+{
+	switch (id)
+	{
+	case JDSP_EFX_TUBE:
+		if (jdsp->tubeEnabled) VacuumTubeProcess(jdsp, n);
+		break;
+	case JDSP_EFX_COMPRESSOR:
+		if (jdsp->compEnabled) CompressorProcess(jdsp, n);
+		break;
+	case JDSP_EFX_PITCHSHIFT:
+		if (jdsp->pitchShiftEnabled) PitchShiftProcess(jdsp, n);
+		break;
+	case JDSP_EFX_FETCOMP:
+		if (jdsp->fetCompEnabled) FetCompProcess(jdsp, n);
+		break;
+	case JDSP_EFX_DIFFSURROUND:
+		if (jdsp->diffSurroundEnabled) DiffSurroundProcess(jdsp, n);
+		break;
+	case JDSP_EFX_BASSBOOST:
+		if (jdsp->bassBoostEnabled) BassBoostProcess(jdsp, n);
+		break;
+	case JDSP_EFX_VDYNBASS:
+		if (jdsp->vdynBassEnabled) VDynBassProcess(jdsp, n);
+		break;
+	case JDSP_EFX_VIPERBASS:
+		if (jdsp->viperBassEnabled) ViperBassProcess(jdsp, n);
+		break;
+	case JDSP_EFX_BASSEX:
+		if (jdsp->bassExEnabled) BassExciterProcess(jdsp, n);
+		break;
+	case JDSP_EFX_EQUALIZER:
+		if (jdsp->equalizerEnabled) MultimodalEqualizerProcess(jdsp, n);
+		break;
+	case JDSP_EFX_ARBITRARYMAG:
+		if (jdsp->arbitraryMagEnabled) ArbitraryResponseEqualizerProcess(jdsp, n);
+		break;
+	case JDSP_EFX_CONVOLVER:
+		jdsp_lock(jdsp);
+		if (jdsp->convolverEnabled && jdsp->conv.process)
+			jdsp->conv.process(jdsp, n);
+		jdsp_unlock(jdsp);
+		break;
+	case JDSP_EFX_DDC:
+		jdsp_lock(jdsp);
+		if (jdsp->ddcEnabled) DDCProcess(jdsp, n);
+		jdsp_unlock(jdsp);
+		break;
+	case JDSP_EFX_LIVEPROG:
+		jdsp_lock(jdsp);
+		if (jdsp->liveprogEnabled) LiveProgProcess(jdsp, n);
+		jdsp_unlock(jdsp);
+		break;
+	case JDSP_EFX_LIVEPROG2:
+	case JDSP_EFX_LIVEPROG3:
+	case JDSP_EFX_LIVEPROG4:
+	{
+		int slot = id - JDSP_EFX_LIVEPROG;
+		jdsp_lock(jdsp);
+		if (slot >= 1 && slot <= JDSP_LIVEPROG_EXTRA &&
+			jdsp->liveprogExtraEnabled[slot - 1])
+			LiveProgProcessSlot(jdsp, slot, n);
+		jdsp_unlock(jdsp);
+		break;
+	}
+	case JDSP_EFX_CROSSFEED:
+		if (jdsp->crossfeedEnabled) CrossfeedProcess(jdsp, n);
+		break;
+	case JDSP_EFX_CURE:
+		if (jdsp->cureEnabled) CureProcess(jdsp, n);
+		break;
+	case JDSP_EFX_STEREOWIDE:
+		if (jdsp->sterEnhEnabled) StereoEnhancementProcess(jdsp, n);
+		break;
+	case JDSP_EFX_FIELDSURROUND:
+		if (jdsp->fieldSurroundEnabled) FieldSurroundProcess(jdsp, n);
+		break;
+	case JDSP_EFX_HPSURROUND:
+		if (jdsp->hpSurroundEnabled) HpSurroundProcess(jdsp, n);
+		break;
+	case JDSP_EFX_SPECTRUMEXT:
+		if (jdsp->spectrumExtEnabled) SpectrumExtensionProcess(jdsp, n);
+		break;
+	case JDSP_EFX_CLARITY:
+		if (jdsp->viperClarityEnabled) ViperClarityProcess(jdsp, n);
+		break;
+	case JDSP_EFX_AGC:
+		if (jdsp->agcEnabled) AgcProcess(jdsp, n);
+		break;
+	case JDSP_EFX_SPEAKEROPT:
+		if (jdsp->speakerOptEnabled) SpeakerOptProcess(jdsp, n);
+		break;
+	case JDSP_EFX_REVERB:
+		if (jdsp->reverbEnabled) ReverbProcess(jdsp, n);
+		break;
+	case JDSP_EFX_VREVERB:
+		if (jdsp->vreverbEnabled) VReverbProcess(jdsp, n);
+		break;
+	default:
+		break;
+	}
+}
+
 // Process
 void JamesDSPProcess(JamesDSPLib *jdsp, size_t n)
 {
-	// Analog modelling
-	if (jdsp->tubeEnabled)
-		VacuumTubeProcess(jdsp, n);
-	// Input / Compressor
-	if (jdsp->compEnabled)
-		CompressorProcess(jdsp, n);
-	// Pitch shifter
-	if (jdsp->pitchShiftEnabled)
-		PitchShiftProcess(jdsp, n);
-	// FET compressor
-	if (jdsp->fetCompEnabled)
-		FetCompProcess(jdsp, n);
-	// Differential surround (channel delay)
-	if (jdsp->diffSurroundEnabled)
-		DiffSurroundProcess(jdsp, n);
-	// IIR bass boost
-	if (jdsp->bassBoostEnabled)
-		BassBoostProcess(jdsp, n);
-	// ViPER dynamic bass
-	if (jdsp->vdynBassEnabled)
-		VDynBassProcess(jdsp, n);
-	// ViPER bass
-	if (jdsp->viperBassEnabled)
-		ViperBassProcess(jdsp, n);
-	// Psychoacoustic bass exciter
-	if (jdsp->bassExEnabled)
-		BassExciterProcess(jdsp, n);
-	// Equalizer
-	if (jdsp->equalizerEnabled)
-		MultimodalEqualizerProcess(jdsp, n);
-	// Arbitrary magnitude eq
-	if (jdsp->arbitraryMagEnabled)
-		ArbitraryResponseEqualizerProcess(jdsp, n);
-	jdsp_lock(jdsp);
-	// Convolver
-	if (jdsp->convolverEnabled)
-		if (jdsp->conv.process)
-			jdsp->conv.process(jdsp, n);
-	// Viper DDC
-	if (jdsp->ddcEnabled)
-		DDCProcess(jdsp, n);
-	// Live programmable
-	if (jdsp->liveprogEnabled)
-		LiveProgProcess(jdsp, n);
-	jdsp_unlock(jdsp);
-	// BS2B
-	if (jdsp->crossfeedEnabled)
-		CrossfeedProcess(jdsp, n);
-	// Cure+ auditory protection
-	if (jdsp->cureEnabled)
-		CureProcess(jdsp, n);
-	// Stereo widening
-	if (jdsp->sterEnhEnabled)
-		StereoEnhancementProcess(jdsp, n);
-	// Field surround
-	if (jdsp->fieldSurroundEnabled)
-		FieldSurroundProcess(jdsp, n);
-	// Headphone surround+ (lite)
-	if (jdsp->hpSurroundEnabled)
-		HpSurroundProcess(jdsp, n);
-	// Spectrum extension
-	if (jdsp->spectrumExtEnabled)
-		SpectrumExtensionProcess(jdsp, n);
-	// ViPER clarity
-	if (jdsp->viperClarityEnabled)
-		ViperClarityProcess(jdsp, n);
-	// Auto gain control
-	if (jdsp->agcEnabled)
-		AgcProcess(jdsp, n);
-	// Speaker optimization
-	if (jdsp->speakerOptEnabled)
-		SpeakerOptProcess(jdsp, n);
-	// Reverb
-	if (jdsp->reverbEnabled)
-		ReverbProcess(jdsp, n);
-	// ViPER reverberation
-	if (jdsp->vreverbEnabled)
-		VReverbProcess(jdsp, n);
+	// Run the effects in the user-defined order
+	for (int chainIndex = 0; chainIndex < jdsp->chainCount; chainIndex++)
+		jdspDispatchEffect(jdsp, jdsp->chainOrder[chainIndex], n);
 	// Output
 	for (size_t i = 0; i < n; i++)
 	{
@@ -424,84 +503,9 @@ void JamesDSPProcess(JamesDSPLib *jdsp, size_t n)
 }
 void JamesDSPProcessCheckBenchmarkReady(JamesDSPLib *jdsp, size_t n)
 {
-	// Analog modelling
-	if (jdsp->tubeEnabled)
-		VacuumTubeProcess(jdsp, n);
-	// Input / Compressor
-	if (jdsp->compEnabled)
-		CompressorProcess(jdsp, n);
-	// Pitch shifter
-	if (jdsp->pitchShiftEnabled)
-		PitchShiftProcess(jdsp, n);
-	// FET compressor
-	if (jdsp->fetCompEnabled)
-		FetCompProcess(jdsp, n);
-	// Differential surround (channel delay)
-	if (jdsp->diffSurroundEnabled)
-		DiffSurroundProcess(jdsp, n);
-	// IIR bass boost
-	if (jdsp->bassBoostEnabled)
-		BassBoostProcess(jdsp, n);
-	// ViPER dynamic bass
-	if (jdsp->vdynBassEnabled)
-		VDynBassProcess(jdsp, n);
-	// ViPER bass
-	if (jdsp->viperBassEnabled)
-		ViperBassProcess(jdsp, n);
-	// Psychoacoustic bass exciter
-	if (jdsp->bassExEnabled)
-		BassExciterProcess(jdsp, n);
-	// Equalizer
-	if (jdsp->equalizerEnabled)
-		MultimodalEqualizerProcess(jdsp, n);
-	// Arbitrary magnitude eq
-	if (jdsp->arbitraryMagEnabled)
-		ArbitraryResponseEqualizerProcess(jdsp, n);
-	jdsp_lock(jdsp);
-	// Convolver
-	if (jdsp->convolverEnabled)
-		if (jdsp->conv.process)
-			jdsp->conv.process(jdsp, n);
-	// Viper DDC
-	if (jdsp->ddcEnabled)
-		DDCProcess(jdsp, n);
-	// Live programmable
-	if (jdsp->liveprogEnabled)
-		LiveProgProcess(jdsp, n);
-	jdsp_unlock(jdsp);
-	// BS2B
-	if (jdsp->crossfeedEnabled)
-		CrossfeedProcess(jdsp, n);
-	// Cure+ auditory protection
-	if (jdsp->cureEnabled)
-		CureProcess(jdsp, n);
-	// Stereo widening
-	if (jdsp->sterEnhEnabled)
-		StereoEnhancementProcess(jdsp, n);
-	// Field surround
-	if (jdsp->fieldSurroundEnabled)
-		FieldSurroundProcess(jdsp, n);
-	// Headphone surround+ (lite)
-	if (jdsp->hpSurroundEnabled)
-		HpSurroundProcess(jdsp, n);
-	// Spectrum extension
-	if (jdsp->spectrumExtEnabled)
-		SpectrumExtensionProcess(jdsp, n);
-	// ViPER clarity
-	if (jdsp->viperClarityEnabled)
-		ViperClarityProcess(jdsp, n);
-	// Auto gain control
-	if (jdsp->agcEnabled)
-		AgcProcess(jdsp, n);
-	// Speaker optimization
-	if (jdsp->speakerOptEnabled)
-		SpeakerOptProcess(jdsp, n);
-	// Reverb
-	if (jdsp->reverbEnabled)
-		ReverbProcess(jdsp, n);
-	// ViPER reverberation
-	if (jdsp->vreverbEnabled)
-		VReverbProcess(jdsp, n);
+	// Run the effects in the user-defined order
+	for (int chainIndex = 0; chainIndex < jdsp->chainCount; chainIndex++)
+		jdspDispatchEffect(jdsp, jdsp->chainOrder[chainIndex], n);
 	// Output
 	for (size_t i = 0; i < n; i++)
 	{
@@ -1245,6 +1249,9 @@ void JamesDSPInit(JamesDSPLib *jdsp, int n, float sample_rate)
 	SpeakerOptSetParam(jdsp, 60.0f);
 	jdsp->pitchShiftEnabled = 0;
 	PitchShiftSetParam(jdsp, 0.0f, 100.0f);
+	for (int i = 0; i < JDSP_LIVEPROG_EXTRA; i++)
+		jdsp->liveprogExtraEnabled[i] = 0;
+	JamesDSPResetChainOrder(jdsp);
 	JLimiterSetCoefficients(jdsp, -(double)(FLT_EPSILON * 10.0f), 100.0);
 	jdsp->postGain = 1.0f;
 	// Init effect

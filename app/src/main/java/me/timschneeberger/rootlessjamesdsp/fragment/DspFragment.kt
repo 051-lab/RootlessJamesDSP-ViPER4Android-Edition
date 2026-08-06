@@ -347,9 +347,15 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
                 if (editing) R.drawable.ic_twotone_check_24dp else R.drawable.ic_twotone_edit_24dp
             )
             binding.searchInput.isEnabled = !editing
+            binding.chainOrderButton.isVisible = editing
             if (editing) {
                 Snackbar.make(binding.root, R.string.effect_edit_hint, Snackbar.LENGTH_LONG).show()
             }
+        }
+
+        binding.chainOrderButton.setOnClickListener {
+            ProcessingOrderDialogFragment.newInstance()
+                .show(childFragmentManager, "processing_order")
         }
 
         binding.editLayoutButton.setOnLongClickListener {

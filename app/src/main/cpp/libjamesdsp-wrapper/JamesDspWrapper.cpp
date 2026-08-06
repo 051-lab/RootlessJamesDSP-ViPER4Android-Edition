@@ -457,6 +457,29 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setSpeakerOpt(J
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setChainOrder(JNIEnv *env, jobject obj, jlong self, jintArray order)
+{
+    DECLARE_DSP_B
+    if (order == nullptr)
+    {
+        JamesDSPResetChainOrder(dsp);
+        return true;
+    }
+    jsize count = env->GetArrayLength(order);
+    if (count <= 0)
+    {
+        JamesDSPResetChainOrder(dsp);
+        return true;
+    }
+    jint *elements = env->GetIntArrayElements(order, nullptr);
+    if (elements == nullptr)
+        return false;
+    JamesDSPSetChainOrder(dsp, reinterpret_cast<const int *>(elements), (int)count);
+    env->ReleaseIntArrayElements(order, elements, JNI_ABORT);
+    return true;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setPitchShift(JNIEnv *env, jobject obj, jlong self, jboolean enable, jfloat semitones, jfloat mix)
 {
     DECLARE_DSP_B

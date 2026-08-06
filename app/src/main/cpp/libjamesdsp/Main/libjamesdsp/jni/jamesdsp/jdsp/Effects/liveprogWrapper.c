@@ -1,9 +1,18 @@
 void NSEEL_HOSTSTUB_EnterMutex() { }
 void NSEEL_HOSTSTUB_LeaveMutex() { }
 #include "../jdsp_header.h"
-void LiveProgConstructor(JamesDSPLib *jdsp)
+// Slot 0 is the original engine; 1..JDSP_LIVEPROG_EXTRA are the chained ones.
+static LiveProg *LiveProgSlot(JamesDSPLib *jdsp, int slot)
 {
-	LiveProg *pg = &jdsp->eel;
+	if (slot <= 0)
+		return &jdsp->eel;
+	if (slot > JDSP_LIVEPROG_EXTRA)
+		return &jdsp->eel;
+	return &jdsp->eelExtra[slot - 1];
+}
+void LiveProgConstructorSlot(JamesDSPLib *jdsp, int slot)
+{
+	LiveProg *pg = LiveProgSlot(jdsp, slot);
     pg->active = 1;
 	pg->compileSucessfully = 0;
 	pg->codehandleInit = 0;
@@ -14,27 +23,65 @@ void LiveProgConstructor(JamesDSPLib *jdsp)
 	pg->input1 = NSEEL_VM_regvar(pg->vm, "spl0");
 	pg->input2 = NSEEL_VM_regvar(pg->vm, "spl1");
 }
-void LiveProgDestructor(JamesDSPLib *jdsp)
+void LiveProgDestructorSlot(JamesDSPLib *jdsp, int slot)
 {
-	if (jdsp->eel.vm)
+	LiveProg *pg = LiveProgSlot(jdsp, slot);
+	if (pg->vm)
 	{
-		NSEEL_code_free(jdsp->eel.codehandleInit);
-		NSEEL_code_free(jdsp->eel.codehandleProcess);
-		NSEEL_VM_free(jdsp->eel.vm);
+		NSEEL_code_free(pg->codehandleInit);
+		NSEEL_code_free(pg->codehandleProcess);
+		NSEEL_VM_free(pg->vm);
+		pg->vm = 0;
+		pg->codehandleInit = 0;
+		pg->codehandleProcess = 0;
+		pg->compileSucessfully = 0;
 	}
 }
+
+void LiveProgConstructor(JamesDSPLib *jdsp)
+{
+	LiveProgConstructorSlot(jdsp, 0);
+	for (int i = 1; i <= JDSP_LIVEPROG_EXTRA; i++)
+		LiveProgConstructorSlot(jdsp, i);
+}
+
+void LiveProgDestructor(JamesDSPLib *jdsp)
+{
+	LiveProgDestructorSlot(jdsp, 0);
+	for (int i = 1; i <= JDSP_LIVEPROG_EXTRA; i++)
+		LiveProgDestructorSlot(jdsp, i);
+}
+void LiveProgEnableSlot(JamesDSPLib *jdsp, int slot)
+{
+	LiveProg *pg = LiveProgSlot(jdsp, slot);
+	if (pg->vmFs)
+		*pg->vmFs = jdsp->fs;
+	if (slot <= 0)
+		jdsp->liveprogEnabled = 1;
+	else if (slot <= JDSP_LIVEPROG_EXTRA)
+		jdsp->liveprogExtraEnabled[slot - 1] = 1;
+}
+
+void LiveProgDisableSlot(JamesDSPLib *jdsp, int slot)
+{
+	if (slot <= 0)
+		jdsp->liveprogEnabled = 0;
+	else if (slot <= JDSP_LIVEPROG_EXTRA)
+		jdsp->liveprogExtraEnabled[slot - 1] = 0;
+}
+
 void LiveProgEnable(JamesDSPLib *jdsp)
 {
-	*jdsp->eel.vmFs = jdsp->fs;
-	jdsp->liveprogEnabled = 1;
+	LiveProgEnableSlot(jdsp, 0);
 }
+
 void LiveProgDisable(JamesDSPLib *jdsp)
 {
-	jdsp->liveprogEnabled = 0;
+	LiveProgDisableSlot(jdsp, 0);
 }
-int LiveProgLoadCode(JamesDSPLib *jdsp, char *codeTextInit, char *codeTextProcess)
+static int LiveProgLoadCodeSlot(JamesDSPLib *jdsp, int slot, char *codeTextInit, char *codeTextProcess)
 {
-	LiveProg *pg = &jdsp->eel;
+	LiveProg *pg = LiveProgSlot(jdsp, slot);
 	pg->compileSucessfully = 0;
 	compileContext *ctx = (compileContext*)pg->vm;
 	NSEEL_VM_freevars(pg->vm);
@@ -93,7 +140,7 @@ const char* checkErrorCode(int errCode)
 		return "No syntax errors detected";
 	}
 }
-int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode)
+int LiveProgStringParserSlot(JamesDSPLib *jdsp, int slot, char *eelCode)
 {
 	jdsp_lock(jdsp);
 	long long strLen = (long long)strlen(eelCode);
@@ -129,7 +176,7 @@ int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode)
 			{
 				strcpy(codeTextProcess, processSegment);
 			}
-			errorMsg = LiveProgLoadCode(jdsp, codeTextInit, codeTextProcess);
+			errorMsg = LiveProgLoadCodeSlot(jdsp, slot, codeTextInit, codeTextProcess);
 		}
 		else
 		{
@@ -137,7 +184,7 @@ int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode)
 			long long cpyLen = initSegment - processSegment - (6 + 1);
 			if (cpyLen > 0)
 				strncpy(codeTextProcess, processSegment, cpyLen);
-			errorMsg = LiveProgLoadCode(jdsp, codeTextInit, codeTextProcess);
+			errorMsg = LiveProgLoadCodeSlot(jdsp, slot, codeTextInit, codeTextProcess);
 		}
 	}
 	free(codeTextInit);
@@ -145,9 +192,9 @@ int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode)
 	jdsp_unlock(jdsp);
 	return errorMsg;
 }
-void LiveProgProcess(JamesDSPLib *jdsp, size_t n)
+void LiveProgProcessSlot(JamesDSPLib *jdsp, int slot, size_t n)
 {
-	LiveProg *eel = &jdsp->eel;
+	LiveProg *eel = LiveProgSlot(jdsp, slot);
     if (eel->compileSucessfully && eel->active)
 	{
 		for (size_t i = 0; i < n; i++)
@@ -167,4 +214,14 @@ void LiveProgProcess(JamesDSPLib *jdsp, size_t n)
 				jdsp->tmpBuffer[1][i] = (float)*eel->input2;
 		}
 	}
+}
+
+int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode)
+{
+	return LiveProgStringParserSlot(jdsp, 0, eelCode);
+}
+
+void LiveProgProcess(JamesDSPLib *jdsp, size_t n)
+{
+	LiveProgProcessSlot(jdsp, 0, n);
 }

@@ -50,6 +50,16 @@
                 android:layout_weight="1" />
 
             <ImageButton
+                android:id="@+id/chain_order_button"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/chain_order_title"
+                android:src="@drawable/ic_twotone_drag_handle_24dp"
+                android:visibility="gone"
+                app:tint="?attr/colorControlNormal" />
+
+            <ImageButton
                 android:id="@+id/edit_layout_button"
                 android:layout_width="48dp"
                 android:layout_height="48dp"

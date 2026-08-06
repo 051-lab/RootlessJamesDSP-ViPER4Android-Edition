@@ -159,6 +159,8 @@ class JamesDspRemoteEngine(
 
     override fun setPitchShift(enable: Boolean, semitones: Float, mix: Float): Boolean = true
 
+    override fun setChainOrder(order: IntArray?): Boolean = true
+
     override fun setSpectrumExtension(enable: Boolean, barkFreq: Float, strength: Float): Boolean {
         // Spectrum extension is unsupported in root/plugin mode (remote engine)
         return true

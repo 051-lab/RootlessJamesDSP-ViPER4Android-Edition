@@ -509,6 +509,48 @@ typedef struct
 	float diffStates[5];
 	float mix, minusMix, gain;
 } stereoEnhancement;
+// ---------------------------------------------------------------------------
+// Processing chain
+//
+// Every effect processes in place on tmpBuffer, so the order they run in is a
+// scheduling choice rather than something baked into the maths. These ids let
+// the host reorder the chain at runtime. The output stage (post gain +
+// limiter) always runs last and is deliberately not part of this list.
+// ---------------------------------------------------------------------------
+#define JDSP_LIVEPROG_EXTRA 3
+#define JDSP_EFX_MAX 32
+enum JdspEffectId
+{
+	JDSP_EFX_TUBE = 0,
+	JDSP_EFX_COMPRESSOR,
+	JDSP_EFX_PITCHSHIFT,
+	JDSP_EFX_FETCOMP,
+	JDSP_EFX_DIFFSURROUND,
+	JDSP_EFX_BASSBOOST,
+	JDSP_EFX_VDYNBASS,
+	JDSP_EFX_VIPERBASS,
+	JDSP_EFX_BASSEX,
+	JDSP_EFX_EQUALIZER,
+	JDSP_EFX_ARBITRARYMAG,
+	JDSP_EFX_CONVOLVER,
+	JDSP_EFX_DDC,
+	JDSP_EFX_LIVEPROG,
+	JDSP_EFX_LIVEPROG2,
+	JDSP_EFX_LIVEPROG3,
+	JDSP_EFX_LIVEPROG4,
+	JDSP_EFX_CROSSFEED,
+	JDSP_EFX_CURE,
+	JDSP_EFX_STEREOWIDE,
+	JDSP_EFX_FIELDSURROUND,
+	JDSP_EFX_HPSURROUND,
+	JDSP_EFX_SPECTRUMEXT,
+	JDSP_EFX_CLARITY,
+	JDSP_EFX_AGC,
+	JDSP_EFX_SPEAKEROPT,
+	JDSP_EFX_REVERB,
+	JDSP_EFX_VREVERB,
+	JDSP_EFX_COUNT
+};
 typedef struct
 {
 	NSEEL_VMCTX vm;
@@ -681,6 +723,12 @@ typedef struct dspsys
 	// Live programmable effect
 	int liveprogEnabled;
 	LiveProg eel;
+	// Additional chained Liveprog slots (slot 0 is 'eel' above)
+	int liveprogExtraEnabled[JDSP_LIVEPROG_EXTRA];
+	LiveProg eelExtra[JDSP_LIVEPROG_EXTRA];
+	// User-defined processing order
+	int chainOrder[JDSP_EFX_MAX];
+	int chainCount;
 	// Arbitrary magnitude response
 	int arbitraryMagEnabled, arbMagForceRefresh;
 	arbitraryMagnitude arbMag;
@@ -843,6 +891,16 @@ extern int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode);
 extern void LiveProgEnable(JamesDSPLib *jdsp);
 extern void LiveProgDisable(JamesDSPLib *jdsp);
 extern void LiveProgProcess(JamesDSPLib *jdsp, size_t n);
+// Chained Liveprog slots. Slot 0 is the original engine; 1..3 are extra.
+extern int LiveProgStringParserSlot(JamesDSPLib *jdsp, int slot, char *eelCode);
+extern void LiveProgEnableSlot(JamesDSPLib *jdsp, int slot);
+extern void LiveProgDisableSlot(JamesDSPLib *jdsp, int slot);
+extern void LiveProgProcessSlot(JamesDSPLib *jdsp, int slot, size_t n);
+extern void LiveProgConstructorSlot(JamesDSPLib *jdsp, int slot);
+extern void LiveProgDestructorSlot(JamesDSPLib *jdsp, int slot);
+// Processing order
+extern void JamesDSPSetChainOrder(JamesDSPLib *jdsp, const int *order, int count);
+extern void JamesDSPResetChainOrder(JamesDSPLib *jdsp);
 // DDC
 extern void DDCConstructor(JamesDSPLib *jdsp);
 extern void DDCDestructor(JamesDSPLib *jdsp);

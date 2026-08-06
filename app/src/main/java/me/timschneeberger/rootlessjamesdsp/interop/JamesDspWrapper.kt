@@ -42,6 +42,7 @@ object JamesDspWrapper {
     external fun setVReverb(self: JamesDspHandle, enable: Boolean, room: Float, damp: Float, width: Float, wet: Float, dry: Float): Boolean
     external fun setSpeakerOpt(self: JamesDspHandle, enable: Boolean, strength: Float): Boolean
     external fun setPitchShift(self: JamesDspHandle, enable: Boolean, semitones: Float, mix: Float): Boolean
+    external fun setChainOrder(self: JamesDspHandle, order: IntArray?): Boolean
     external fun setSpectrumExtension(self: JamesDspHandle, enable: Boolean, barkFreq: Float, strength: Float): Boolean
     external fun initCrashGuard(path: String)
     external fun setPostGain(self: JamesDspHandle, postGain: Float): Boolean
