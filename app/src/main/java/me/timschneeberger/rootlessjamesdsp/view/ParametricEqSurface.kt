@@ -199,7 +199,7 @@ class ParametricEqSurface(context: Context?, attrs: AttributeSet?) : View(contex
         return exp(minP + xFrac.coerceIn(0f, 1f) * (maxP - minP))
     }
     private fun unprojectGain(yFrac: Float): Double {
-        val pos = 1.0f - yFrac.coerceIn(0f, 1f)
+        val pos = 1.0 - yFrac.coerceIn(0f, 1f).toDouble()
         return minDb + pos * (maxDb - minDb)
     }
 
