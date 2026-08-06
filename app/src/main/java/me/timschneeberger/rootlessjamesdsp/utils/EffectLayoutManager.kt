@@ -44,6 +44,17 @@ class EffectLayoutManager(
     var editMode = false
         private set
 
+    init {
+        // Orders saved by earlier builds were derived from a wrong default and
+        // scrambled the layout; drop them once so everyone starts clean.
+        if (prefs.getInt(KEY_SCHEMA, 1) < SCHEMA_VERSION) {
+            prefs.edit()
+                .remove(KEY_ORDER)
+                .putInt(KEY_SCHEMA, SCHEMA_VERSION)
+                .apply()
+        }
+    }
+
     var onEditModeChanged: ((Boolean) -> Unit)? = null
 
     // ---------------------------------------------------------------- helpers
@@ -302,5 +313,7 @@ class EffectLayoutManager(
         private const val PREFS = "effect_layout"
         private const val KEY_ORDER = "order"
         private const val KEY_HIDDEN = "hidden"
+        private const val KEY_SCHEMA = "schema"
+        private const val SCHEMA_VERSION = 2
     }
 }

@@ -19,6 +19,7 @@ import me.timschneeberger.rootlessjamesdsp.databinding.FragmentDspBinding
 import me.timschneeberger.rootlessjamesdsp.utils.Constants
 import me.timschneeberger.rootlessjamesdsp.utils.EffectLayoutManager
 import com.google.android.material.snackbar.Snackbar
+import me.timschneeberger.rootlessjamesdsp.utils.extensions.ContextExtensions.showYesNoAlert
 import me.timschneeberger.rootlessjamesdsp.utils.preferences.Preferences
 import org.koin.android.ext.android.inject
 import timber.log.Timber
@@ -349,6 +350,19 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
             if (editing) {
                 Snackbar.make(binding.root, R.string.effect_edit_hint, Snackbar.LENGTH_LONG).show()
             }
+        }
+
+        binding.editLayoutButton.setOnLongClickListener {
+            requireContext().showYesNoAlert(
+                R.string.effect_reset_layout,
+                R.string.effect_reset_layout_confirm
+            ) { confirmed ->
+                if (confirmed) {
+                    if (manager.editMode) manager.exitEditMode()
+                    manager.resetLayout()
+                }
+            }
+            true
         }
 
         binding.editLayoutButton.setOnClickListener {
