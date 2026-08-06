@@ -61,6 +61,25 @@ class ProcessingOrderDialogFragment : DialogFragment() {
         ChainEffect(27, R.string.vreverb_enable)
     )
 
+    /** Chained Liveprog slots only appear once they actually hold a script. */
+    private fun isSlotUnused(id: Int): Boolean {
+        val slot = when (id) {
+            14 -> 2
+            15 -> 3
+            16 -> 4
+            else -> return false
+        }
+        val prefName = "dsp_liveprog$slot"
+        val keyId = resources.getIdentifier(
+            "key_liveprog${slot}_file", "string", requireContext().packageName
+        )
+        if (keyId == 0) return false
+        val value = requireContext()
+            .getSharedPreferences(prefName, android.content.Context.MODE_PRIVATE)
+            .getString(getString(keyId), "")
+        return value.isNullOrBlank()
+    }
+
     private lateinit var order: MutableList<ChainEffect>
 
     private fun prefs() = requireContext()
@@ -70,7 +89,7 @@ class ProcessingOrderDialogFragment : DialogFragment() {
         val saved = prefs().getString(Constants.KEY_CHAIN_ORDER, null)
             ?.split(",")
             ?.mapNotNull { it.trim().toIntOrNull() }
-            ?: return allEffects.toMutableList()
+            ?: return allEffects.filterNot { isSlotUnused(it.id) }.toMutableList()
         val result = ArrayList<ChainEffect>()
         saved.forEach { id -> allEffects.firstOrNull { it.id == id }?.let(result::add) }
         // Anything missing (e.g. added by an update) keeps its default position
@@ -79,14 +98,18 @@ class ProcessingOrderDialogFragment : DialogFragment() {
                 result.add(index.coerceAtMost(result.size), effect)
             }
         }
+        result.removeAll { isSlotUnused(it.id) }
         return result
     }
 
     private fun saveOrder() {
+        // Hidden (script-less) slots are appended so the engine still gets a
+        // complete chain; with no script loaded their position is irrelevant.
+        val ids = order.map { it.id }.toMutableList()
+        allEffects.forEach { effect -> if (!ids.contains(effect.id)) ids.add(effect.id) }
         prefs().edit()
-            .putString(Constants.KEY_CHAIN_ORDER, order.joinToString(",") { it.id.toString() })
+            .putString(Constants.KEY_CHAIN_ORDER, ids.joinToString(","))
             .apply()
-        requireContext().sendLocalBroadcast(Intent(Constants.ACTION_PREFERENCES_UPDATED))
     }
 
     private inner class Holder(val root: LinearLayout) : RecyclerView.ViewHolder(root) {

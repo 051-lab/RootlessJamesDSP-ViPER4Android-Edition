@@ -204,9 +204,17 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
             cache.select(Constants.PREF_LIVEPROG)
             val liveProgEnabled = cache.get(R.string.key_liveprog_enable, false)
             val liveprogFile = cache.get(R.string.key_liveprog_file, "")
-            val liveprogFiles2 = cache.get(R.string.key_liveprog_file2, "")
-            val liveprogFiles3 = cache.get(R.string.key_liveprog_file3, "")
-            val liveprogFiles4 = cache.get(R.string.key_liveprog_file4, "")
+            cache.select(Constants.PREF_LIVEPROG2)
+            val liveprog2Enabled = cache.get(R.string.key_liveprog2_enable, false)
+            val liveprog2File = cache.get(R.string.key_liveprog2_file, "")
+
+            cache.select(Constants.PREF_LIVEPROG3)
+            val liveprog3Enabled = cache.get(R.string.key_liveprog3_enable, false)
+            val liveprog3File = cache.get(R.string.key_liveprog3_file, "")
+
+            cache.select(Constants.PREF_LIVEPROG4)
+            val liveprog4Enabled = cache.get(R.string.key_liveprog4_enable, false)
+            val liveprog4File = cache.get(R.string.key_liveprog4_file, "")
 
             cache.select(Constants.PREF_CONVOLVER)
             val convolverEnabled = cache.get(R.string.key_convolver_enable, false)
@@ -250,12 +258,10 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
                     Constants.PREF_CROSSFEED -> setCrossfeed(crossfeedEnabled, crossfeedMode)
                     Constants.PREF_TUBE -> setVacuumTube(tubeEnabled, tubeDrive)
                     Constants.PREF_DDC -> setVdc(ddcEnabled, ddcFile)
-                    Constants.PREF_LIVEPROG -> {
-                        setLiveprog(liveProgEnabled, liveprogFile)
-                        setLiveprogSlot(1, liveProgEnabled, liveprogFiles2)
-                        setLiveprogSlot(2, liveProgEnabled, liveprogFiles3)
-                        setLiveprogSlot(3, liveProgEnabled, liveprogFiles4)
-                    }
+                    Constants.PREF_LIVEPROG -> setLiveprog(liveProgEnabled, liveprogFile)
+                    Constants.PREF_LIVEPROG2 -> setLiveprogSlot(1, liveprog2Enabled, liveprog2File)
+                    Constants.PREF_LIVEPROG3 -> setLiveprogSlot(2, liveprog3Enabled, liveprog3File)
+                    Constants.PREF_LIVEPROG4 -> setLiveprogSlot(3, liveprog4Enabled, liveprog4File)
                     Constants.PREF_CONVOLVER -> {
                         val mappedFile = ConvolverSampleRateFiles.resolve(
                             convolverSampleRateFiles,
@@ -510,17 +516,16 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
     fun setLiveprogSlot(slot: Int, enable: Boolean, path: String): Boolean {
         if (slot < 1 || slot > 3) return false
         if (path.isBlank()) return setLiveprogSlotInternal(slot, false, "", "")
-        val file = java.io.File(path)
-        if (!file.exists()) {
-            Timber.w("setLiveprogSlot: file does not exist")
+
+        val fullPath = FileLibraryPreference.createFullPathCompat(context, path)
+        val file = File(fullPath)
+        if (!file.exists() || file.isDirectory) {
+            Timber.w("setLiveprogSlot: file does not exist ($fullPath)")
             return setLiveprogSlotInternal(slot, false, "", "")
         }
-        return try {
-            setLiveprogSlotInternal(slot, enable, file.name, file.readText())
-        } catch (ex: Exception) {
-            Timber.e(ex)
-            setLiveprogSlotInternal(slot, false, "", "")
-        }
+        return safeFileReader(fullPath)?.use {
+            setLiveprogSlotInternal(slot, enable, file.name, it.readText())
+        } ?: setLiveprogSlotInternal(slot, false, "", "")
     }
 
     fun setLiveprog(enable: Boolean, path: String): Boolean

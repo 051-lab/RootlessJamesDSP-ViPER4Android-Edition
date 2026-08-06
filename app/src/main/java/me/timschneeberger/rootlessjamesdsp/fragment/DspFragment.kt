@@ -138,6 +138,18 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
                     R.xml.dsp_pitchshift_preferences
                 ))
             .replace(
+                R.id.card_liveprog2, PreferenceGroupFragment.newInstance(Constants.PREF_LIVEPROG2,
+                    R.xml.dsp_liveprog2_preferences
+                ))
+            .replace(
+                R.id.card_liveprog3, PreferenceGroupFragment.newInstance(Constants.PREF_LIVEPROG3,
+                    R.xml.dsp_liveprog3_preferences
+                ))
+            .replace(
+                R.id.card_liveprog4, PreferenceGroupFragment.newInstance(Constants.PREF_LIVEPROG4,
+                    R.xml.dsp_liveprog4_preferences
+                ))
+            .replace(
                 R.id.card_agc, PreferenceGroupFragment.newInstance(Constants.PREF_AGC,
                     R.xml.dsp_agc_preferences
                 ))
@@ -275,6 +287,9 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
         CardEntry(R.id.card_ddc, R.string.v4a_ddc_title),
         CardEntry(R.id.card_convolver, R.string.convolver_enable),
         CardEntry(R.id.card_liveprog, R.string.liveprog_enable),
+        CardEntry(R.id.card_liveprog2, R.string.liveprog2_enable),
+        CardEntry(R.id.card_liveprog3, R.string.liveprog3_enable),
+        CardEntry(R.id.card_liveprog4, R.string.liveprog4_enable),
         CardEntry(R.id.card_tube, R.string.v4a_tube_title),
         CardEntry(R.id.card_spectrumext, R.string.spectrumext_enable),
         CardEntry(R.id.card_stereowide, R.string.stereowide_enable),

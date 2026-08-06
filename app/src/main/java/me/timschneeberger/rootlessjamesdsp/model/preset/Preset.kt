@@ -73,7 +73,7 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
 
                 currentPath(ctx)
                     .listFiles()
-                    ?.filter { it.name.startsWith("dsp_") }
+                    ?.filter { it.name.startsWith("dsp_") || it.name == FILE_EFFECT_LAYOUT }
                     ?.filter { it.extension == "xml" }
                     ?.forEach(c::add)
 
@@ -118,7 +118,15 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
         const val META_MIN_VERSION_CODE = "min_version_code" /* version 3+ */
 
         private fun currentPath(ctx: Context) = File(ctx.applicationInfo.dataDir + "/shared_prefs")
-        private fun isKnownEntry(n: String) = (n.startsWith("dsp_") && n.endsWith("xml")) || n == FILE_LIVEPROG
+        // "dsp_*" covers every effect namespace and the processing chain order;
+        // the visual layout (card order, hidden cards, custom groups) lives in
+        // its own file and must be listed explicitly.
+        private const val FILE_EFFECT_LAYOUT = "effect_layout.xml"
+
+        private fun isKnownEntry(n: String) =
+            (n.startsWith("dsp_") && n.endsWith("xml")) ||
+                    n == FILE_EFFECT_LAYOUT ||
+                    n == FILE_LIVEPROG
 
         fun validate(inputStream: InputStream) = Tar.Reader(inputStream, ::isKnownEntry).validate()
 

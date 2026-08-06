@@ -132,35 +132,6 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
                     true
                 }
             }
-            R.xml.dsp_liveprog_preferences -> {
-                // Chained script slots appear one at a time: slot N+1 only
-                // shows once slot N actually holds a script.
-                val slotKeys = listOf(
-                    getString(R.string.key_liveprog_file),
-                    getString(R.string.key_liveprog_file2),
-                    getString(R.string.key_liveprog_file3),
-                    getString(R.string.key_liveprog_file4)
-                )
-                val group = findPreference<SwitchPreferenceGroup>(getString(R.string.key_liveprog_enable))
-
-                fun slotFilled(key: String) =
-                    findPreference<FileLibraryPreference>(key)?.value?.isNotBlank() == true
-
-                group?.childVisibilityFilter = filter@{ pref ->
-                    val index = slotKeys.indexOf(pref.key)
-                    if (index <= 0) return@filter true
-                    // visible if the previous slot is in use
-                    slotFilled(slotKeys[index - 1])
-                }
-                group?.refreshChildrenVisibility()
-
-                slotKeys.forEach { key ->
-                    findPreference<FileLibraryPreference>(key)?.setOnPreferenceChangeListener { _, _ ->
-                        view?.post { group?.refreshChildrenVisibility() }
-                        true
-                    }
-                }
-            }
             R.xml.dsp_bassex_preferences -> {
                 val band2Keys = arrayOf(
                     R.string.key_bassex_cutoff2, R.string.key_bassex_intensity2, R.string.key_bassex_mix2)
