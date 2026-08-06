@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.isVisible
+import androidx.core.widget.addTextChangedListener
 import androidx.fragment.app.Fragment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -187,6 +188,9 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
             onSharedPreferenceChanged(null, getString(it))
         }
 
+        setupEffectSearch()
+
+
         return binding.root
     }
 
@@ -240,4 +244,74 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
             return DspFragment()
         }
     }
+
+    private data class CardEntry(val cardId: Int, val titleRes: Int)
+
+    private val searchableCards = listOf(
+        CardEntry(R.id.card_output_control, R.string.output_control_header),
+        CardEntry(R.id.card_compressor, R.string.compander_enable_v2),
+        CardEntry(R.id.card_bass, R.string.bass_enable),
+        CardEntry(R.id.card_bassex, R.string.bassex_enable),
+        CardEntry(R.id.card_vdynbass, R.string.v4a_vdynbass_title),
+        CardEntry(R.id.card_diffsurround, R.string.diffsurround_enable),
+        CardEntry(R.id.card_clarity, R.string.clarity_enable),
+        CardEntry(R.id.card_fieldsurround, R.string.fieldsurround_enable),
+        CardEntry(R.id.card_hpsurround, R.string.v4a_hpsurround_title),
+        CardEntry(R.id.card_fetcomp, R.string.fetcomp_enable),
+        CardEntry(R.id.card_cure, R.string.cure_enable),
+        CardEntry(R.id.card_viperbass, R.string.viperbass_enable),
+        CardEntry(R.id.card_vreverb, R.string.vreverb_enable),
+        CardEntry(R.id.card_speakeropt, R.string.speakeropt_enable),
+        CardEntry(R.id.card_pitchshift, R.string.pitchshift_enable),
+        CardEntry(R.id.card_agc, R.string.v4a_agc_title),
+        CardEntry(R.id.card_eq, R.string.v4a_eq_title),
+        CardEntry(R.id.card_geq, R.string.geq_enable),
+        CardEntry(R.id.card_peq, R.string.peq_enable),
+        CardEntry(R.id.card_ddc, R.string.v4a_ddc_title),
+        CardEntry(R.id.card_convolver, R.string.convolver_enable),
+        CardEntry(R.id.card_liveprog, R.string.liveprog_enable),
+        CardEntry(R.id.card_tube, R.string.v4a_tube_title),
+        CardEntry(R.id.card_spectrumext, R.string.spectrumext_enable),
+        CardEntry(R.id.card_stereowide, R.string.stereowide_enable),
+        CardEntry(R.id.card_crossfeed, R.string.crossfeed_enable),
+        CardEntry(R.id.card_reverb, R.string.reverb_enable),
+    )
+
+    /** Hides cards whose title doesn't match the query. Empty query restores everything. */
+    private fun applyEffectSearch(query: String) {
+        val q = query.trim().lowercase(Locale.getDefault())
+        val searching = q.isNotEmpty()
+        var matches = 0
+
+        searchableCards.forEach { entry ->
+            val card = binding.root.findViewById<View>(entry.cardId)?.parent as? View
+            if (card != null) {
+                val title = getString(entry.titleRes).lowercase(Locale.getDefault())
+                val visible = !searching || title.contains(q)
+                card.isVisible = visible
+                if (visible && searching) matches++
+            }
+        }
+
+        // Group headers and non-effect cards only make sense outside of search
+        binding.root.findViewById<View>(R.id.v4a_section_header)?.isVisible = !searching
+        binding.root.findViewById<View>(R.id.card_device_profiles)?.let {
+            (it.parent as? View)?.isVisible = !searching
+        }
+        binding.searchEmpty.isVisible = searching && matches == 0
+    }
+
+    private fun setupEffectSearch() {
+        binding.searchInput.addTextChangedListener(
+            afterTextChanged = { applyEffectSearch(it?.toString() ?: "") }
+        )
+        // iOS-style: search sits just above the content, revealed by pulling down
+        binding.dspScrollview.post {
+            val h = binding.searchCard.height
+            if (h > 0 && binding.searchInput.text.isNullOrEmpty()) {
+                binding.dspScrollview.scrollTo(0, h)
+            }
+        }
+    }
+
 }

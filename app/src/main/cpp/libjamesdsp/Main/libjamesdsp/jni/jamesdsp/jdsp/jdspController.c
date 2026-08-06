@@ -1232,7 +1232,7 @@ void JamesDSPInit(JamesDSPLib *jdsp, int n, float sample_rate)
 	jdsp->agcEnabled = 0;
 	AgcSetParam(jdsp, 30.0f, 12.0f);
 	jdsp->hpSurroundEnabled = 0;
-	HpSurroundSetParam(jdsp, 40.0f, 30.0f);
+	HpSurroundSetParam(jdsp, 60.0f, 35.0f);
 	jdsp->fetCompEnabled = 0;
 	FetCompSetParam(jdsp, -18.0f, 4.0f, 5.0f, 120.0f, 0.0f);
 	jdsp->cureEnabled = 0;

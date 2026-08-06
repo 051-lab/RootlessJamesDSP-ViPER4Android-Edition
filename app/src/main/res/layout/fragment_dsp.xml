@@ -19,6 +19,40 @@
         android:paddingBottom="16dp"
         android:showDividers="middle">
 
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/search_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="1dp"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant">
+
+            <EditText
+                android:id="@+id/search_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@null"
+                android:drawableStart="@drawable/ic_twotone_search_24dp"
+                android:drawablePadding="12dp"
+                android:hint="@string/effect_search_hint"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:maxLines="1"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="14dp"
+                android:textColorHint="?android:attr/textColorSecondary"
+                android:importantForAutofill="no" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:id="@+id/search_empty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:paddingVertical="32dp"
+            android:text="@string/effect_search_empty"
+            android:textColor="?android:attr/textColorSecondary"
+            android:visibility="gone" />
+
         <me.timschneeberger.rootlessjamesdsp.view.Card
             android:id="@+id/translation_notice"
             android:layout_width="match_parent"
@@ -170,6 +204,7 @@
                 android:layout_height="wrap_content" />
         </com.google.android.material.card.MaterialCardView>
         <TextView
+            android:id="@+id/v4a_section_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingTop="20dp"

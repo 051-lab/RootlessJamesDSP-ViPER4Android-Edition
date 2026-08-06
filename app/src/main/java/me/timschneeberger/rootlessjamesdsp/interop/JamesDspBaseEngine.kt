@@ -121,7 +121,7 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
 
             cache.select(Constants.PREF_HPSURROUND)
             val hpsEnabled = cache.get(R.string.key_hpsurround_enable, false)
-            val hpsStrength = cache.get(R.string.key_hpsurround_strength, 40f)
+            val hpsStrength = cache.get(R.string.key_hpsurround_strength, 60f)
             val hpsRoom = cache.get(R.string.key_hpsurround_room, 30f)
 
             cache.select(Constants.PREF_FETCOMP)

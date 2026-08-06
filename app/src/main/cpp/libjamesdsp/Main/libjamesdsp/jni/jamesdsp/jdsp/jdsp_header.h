@@ -141,11 +141,12 @@ typedef struct
 } SpeakerOpt;
 typedef struct
 {
-	float bufL[4096], bufR[4096];
+	float bufL[8192], bufR[8192];
 	int widx;
-	float cross, room;
-	int dCross, dR1, dR2;
+	float cross, room, width, fb, norm;
+	int dCross, dR1, dR2, dR3;
 	float lpCoef, lpzL, lpzR;
+	float dampCoef, fbzL, fbzR;
 } HpSurround;
 typedef struct
 {
