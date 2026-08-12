@@ -802,43 +802,63 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setVacuumTube(J
     return true;
 }
 
+static void dispatchLiveprogResult(JNIEnv *env, JamesDspWrapper *wrapper, jint ret, jstring id,
+                                   const char *errorString)
+{
+    jstring errorStringJni = errorString ? env->NewStringUTF(errorString) : nullptr;
+    env->CallVoidMethod(wrapper->callbackInterface, wrapper->callbackOnLiveprogResult,
+                        ret, id, errorStringJni);
+    if (errorStringJni)
+        env->DeleteLocalRef(errorStringJni);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setLiveprogSlot(JNIEnv *env, jobject obj, jlong self,
                                                                                 jint slot, jboolean enable, jstring id, jstring liveprogContent)
 {
     DECLARE_DSP_B
 
-    if (slot < 1 || slot > 3)
+    if (slot < 1 || slot > JDSP_LIVEPROG_EXTRA)
         return false;
 
     setStdOutHandler(receiveLiveprogStdOut, wrapper);
-    LiveProgDisableSlot(dsp, slot);
-
     if (!enable)
+    {
+        LiveProgDisableSlot(dsp, slot);
         return true;
+    }
 
     const char *nativeString = env->GetStringUTFChars(liveprogContent, nullptr);
-    if (strlen(nativeString) < 1) {
+    if (!nativeString)
+        return false;
+    if (strlen(nativeString) < 1)
+    {
         LOGD("JamesDspWrapper::setLiveprogSlot: empty file")
         env->ReleaseStringUTFChars(liveprogContent, nativeString);
+        LiveProgDisableSlot(dsp, slot);
         return true;
     }
 
     env->CallVoidMethod(wrapper->callbackInterface, wrapper->callbackOnLiveprogExec, id);
 
-    int ret = LiveProgStringParserSlot(dsp, slot, (char*)nativeString);
+    char errorBuffer[512] = { 0 };
+    int ret = LiveProgStringParserSlot(dsp, slot, (char*)nativeString,
+                                       errorBuffer, sizeof(errorBuffer));
     env->ReleaseStringUTFChars(liveprogContent, nativeString);
 
-    // Workaround due to library bug (mirrors setLiveprog)
-    jdsp_unlock(dsp);
-
+    const char *errorString = errorBuffer[0] ? errorBuffer : nullptr;
     if (ret <= 0)
     {
-        LOGW("JamesDspWrapper::setLiveprogSlot: failed to compile script for slot %d (code %d)", slot, ret)
-        return false;
+        LOGW("JamesDspWrapper::setLiveprogSlot: %s (slot %d, code %d)",
+             checkErrorCode(ret), slot, ret)
+        if (errorString)
+            LOGW("JamesDspWrapper::setLiveprogSlot: compiler detail: %s", errorString)
     }
+    dispatchLiveprogResult(env, wrapper, ret, id, errorString);
 
-    // Without this the slot holds a compiled script but never runs
+    if (ret <= 0)
+        return false;
+
     LiveProgEnableSlot(dsp, slot);
     return true;
 }
@@ -849,57 +869,59 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setLiveprog(JNI
 {
     DECLARE_DSP_B
 
-    // Attach log listener
     setStdOutHandler(receiveLiveprogStdOut, wrapper);
-
-    LiveProgDisable(dsp);
+    if (!enable)
+    {
+        LiveProgDisable(dsp);
+        return true;
+    }
 
     const char *nativeString = env->GetStringUTFChars(liveprogContent, nullptr);
-    if(strlen(nativeString) < 1) {
+    if (!nativeString)
+        return false;
+    if(strlen(nativeString) < 1)
+    {
         LOGD("JamesDspWrapper::setLiveprog: empty file")
         env->ReleaseStringUTFChars(liveprogContent, nativeString);
+        LiveProgDisable(dsp);
         return true;
     }
 
     env->CallVoidMethod(wrapper->callbackInterface, wrapper->callbackOnLiveprogExec, id);
 
-    int ret = LiveProgStringParser(dsp, (char*)nativeString); // Ignore constness, libjamesdsp does not modify it
+    char errorBuffer[512] = { 0 };
+    int ret = LiveProgStringParser(dsp, (char*)nativeString,
+                                   errorBuffer, sizeof(errorBuffer));
     env->ReleaseStringUTFChars(liveprogContent, nativeString);
 
-    // Workaround due to library bug
-    jdsp_unlock(dsp);
-
-    const char* errorString = NSEEL_code_getcodeerror(dsp->eel.vm);
-    if(errorString != nullptr)
+    const char *errorString = errorBuffer[0] ? errorBuffer : nullptr;
+    if (ret <= 0)
     {
-        LOGW("JamesDspWrapper::setLiveprog: NSEEL_code_getcodeerror: Syntax error in script file, cannot load. Reason: %s", errorString);
+        LOGW("JamesDspWrapper::setLiveprog: %s", checkErrorCode(ret))
+        if (errorString)
+            LOGW("JamesDspWrapper::setLiveprog: compiler detail: %s", errorString)
     }
-    if(ret <= 0)
-    {
-        LOGW("JamesDspWrapper::setLiveprog: %s", checkErrorCode(ret));
-    }
+    dispatchLiveprogResult(env, wrapper, ret, id, errorString);
 
-    jstring errorStringJni = env->NewStringUTF(errorString);
-    env->CallVoidMethod(wrapper->callbackInterface, wrapper->callbackOnLiveprogResult, ret, id, errorStringJni);
-    env->DeleteLocalRef(errorStringJni);
+    if (ret <= 0)
+        return false;
 
-    if(enable)
-        LiveProgEnable(dsp);
-    else
-        LiveProgDisable(dsp);
+    LiveProgEnable(dsp);
     return true;
 }
 
-
-extern "C" JNIEXPORT jobject JNICALL
-Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_enumerateEelVariables(JNIEnv *env, jobject obj, jlong self)
+static jobject enumerateEelVariablesForSlot(JNIEnv *env, JamesDSPLib *dsp, int slot)
 {
     auto array = JArrayList(env);
+    jdsp_lock(dsp);
+    LiveProg *pg = LiveProgGetSlot(dsp, slot);
+    if (!pg || !pg->vm)
+    {
+        jdsp_unlock(dsp);
+        return array.getJavaReference();
+    }
 
-    // Return empty array if DECLARE failed
-    DECLARE_DSP(array.getJavaReference())
-
-    auto *ctx = (compileContext*)dsp->eel.vm;
+    auto *ctx = (compileContext*)pg->vm;
     for (int i = 0; i < ctx->varTable_numBlocks; i++)
     {
         for (int j = 0; j < NSEEL_VARS_PER_BLOCK; j++)
@@ -911,20 +933,60 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_enumerateEelVar
             if (ctx->varTable_Names[i][j])
             {
                 const char* name = ctx->varTable_Names[i][j];
+                std::string numericValue;
                 const char* value;
 
                 if(isString)
                     value = valid;
                 else
-                    value = std::to_string(ctx->varTable_Values[i][j]).c_str();
+                {
+                    numericValue = std::to_string(ctx->varTable_Values[i][j]);
+                    value = numericValue.c_str();
+                }
 
                 auto var = EelVmVariable(env, name, value, isString);
                 array.add(var.getJavaReference());
             }
         }
     }
-
+    jdsp_unlock(dsp);
     return array.getJavaReference();
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_enumerateEelVariables(JNIEnv *env, jobject obj, jlong self)
+{
+    auto empty = JArrayList(env);
+    DECLARE_DSP(empty.getJavaReference())
+    return enumerateEelVariablesForSlot(env, dsp, 0);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_enumerateEelVariablesSlot(JNIEnv *env, jobject obj, jlong self,
+                                                                                           jint slot)
+{
+    auto empty = JArrayList(env);
+    DECLARE_DSP(empty.getJavaReference())
+    if (slot < 0 || slot > JDSP_LIVEPROG_EXTRA)
+        return empty.getJavaReference();
+    return enumerateEelVariablesForSlot(env, dsp, slot);
+}
+
+static jboolean manipulateEelVariableForSlot(JNIEnv *env, JamesDSPLib *dsp, int slot,
+                                             jstring name, jfloat value)
+{
+    if (!name)
+        return false;
+    const char *nativeName = env->GetStringUTFChars(name, nullptr);
+    if (!nativeName)
+        return false;
+
+    const bool updated = LiveProgSetVariableSlot(dsp, slot, nativeName, value) != 0;
+    if (!updated)
+        LOGE("JamesDspWrapper::manipulateEelVariable: invalid or unknown variable '%s' in slot %d",
+             nativeName, slot)
+    env->ReleaseStringUTFChars(name, nativeName);
+    return updated;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -932,37 +994,17 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_manipulateEelVa
                                                                                       jstring name, jfloat value)
 {
     DECLARE_DSP_B
-    auto* ctx = (compileContext*)dsp->eel.vm;
-    for (int i = 0; i < ctx->varTable_numBlocks; i++)
-    {
-        for (int j = 0; j < NSEEL_VARS_PER_BLOCK; j++)
-        {
-            const char *nativeName = env->GetStringUTFChars(name, nullptr);
-            if(!ctx->varTable_Names[i][j] || std::strcmp(ctx->varTable_Names[i][j], nativeName) != 0)
-            {
-                env->ReleaseStringUTFChars(name, nativeName);
-                continue;
-            }
+    return manipulateEelVariableForSlot(env, dsp, 0, name, value);
+}
 
-            const char *valid = nullptr;//(char*)GetStringForIndex(ctx->region_context, ctx->varTable_Values[i][j], 1);
-            if(valid)
-            {
-                LOGE("JamesDspWrapper::manipulateEelVariable: variable '%s' is a string; currently only numerical variables can be manipulated", nativeName);
-                env->ReleaseStringUTFChars(name, nativeName);
-                return false;
-            }
-
-            ctx->varTable_Values[i][j] = value;
-
-            env->ReleaseStringUTFChars(name, nativeName);
-            return true;
-        }
-    }
-
-    const char *nativeName = env->GetStringUTFChars(name, nullptr);
-    LOGE("JamesDspWrapper::manipulateEelVariable: variable '%s' not found", nativeName);
-    env->ReleaseStringUTFChars(name, nativeName);
-    return false;
+extern "C" JNIEXPORT jboolean JNICALL
+Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_manipulateEelVariableSlot(JNIEnv *env, jobject obj, jlong self,
+                                                                                          jint slot, jstring name, jfloat value)
+{
+    DECLARE_DSP_B
+    if (slot < 0 || slot > JDSP_LIVEPROG_EXTRA)
+        return false;
+    return manipulateEelVariableForSlot(env, dsp, slot, name, value);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -970,7 +1012,9 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_freezeLiveprogE
                                                                                         jboolean freeze)
 {
     DECLARE_DSP_V
+    jdsp_lock(dsp);
     dsp->eel.active = !freeze;
+    jdsp_unlock(dsp);
     LOGD("JamesDspWrapper::freezeLiveprogExecution: Liveprog execution has been %s", (freeze ? "frozen" : "resumed"));
 }
 
