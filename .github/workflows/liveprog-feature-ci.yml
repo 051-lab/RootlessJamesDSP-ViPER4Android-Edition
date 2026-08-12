@@ -63,7 +63,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run LiveProg instrumentation tests on Android 14
+      - name: Isolate LiveProg slot access crash on Android 14
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -72,10 +72,15 @@ jobs:
           profile: pixel_7_pro
           disable-animations: true
           script: |
+            adb logcat -c || true
+            adb logcat -v threadtime > liveprog-logcat.txt 2>&1 &
+            logcat_pid=$!
             set +e
-            ./gradlew connectedRootlessFdroidDebugAndroidTest --no-daemon --stacktrace --info 2>&1 | tee liveprog-instrumentation.log
-            status=${PIPESTATUS[0]}
-            adb logcat -d > liveprog-logcat.txt 2>&1 || true
+            ./gradlew connectedRootlessFdroidDebugAndroidTest --no-daemon --stacktrace --info '-Pandroid.testInstrumentationRunnerArguments.class=me.timschneeberger.rootlessjamesdsp.interop.LiveProgLifecycleInstrumentedTest#slotVariableWritesAreIsolated' > liveprog-instrumentation.log 2>&1
+            status=$?
+            kill $logcat_pid 2>/dev/null || true
+            wait $logcat_pid 2>/dev/null || true
+            cat liveprog-instrumentation.log
             exit $status
 
       - name: Upload LiveProg emulator diagnostics
