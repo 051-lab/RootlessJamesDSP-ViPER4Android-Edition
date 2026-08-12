@@ -74,7 +74,8 @@ Requirements:
 - Duplicate recognized sections are rejected.
 - Unknown `@...` sections do not become executable LiveProg sections.
 - `@sample` is mandatory.
-- Empty optional sections are accepted.
+- `@init`, `@slider`, and `@block` may be absent or empty.
+- `@sample`-only scripts are accepted, matching the hardened 051 reference implementation.
 - Each section is compiled independently so syntax failures identify the lifecycle stage that failed.
 
 Error codes retain existing meanings where possible and add dedicated errors for slider, block, duplicate section, and allocation/VM setup failure.
@@ -141,7 +142,7 @@ Direct JNI mutation of NSEEL's internal variable table must no longer be the pri
 
 ## Android / JNI Slot APIs
 
-Add slot-aware VM access while preserving the existing slot-0 API surface:
+Add local-engine slot-aware VM access while preserving the existing slot-0 API surface:
 
 ```kotlin
 enumerateEelVariablesSlot(self, slot)
@@ -157,7 +158,7 @@ manipulateEelVariable(self, name, value)
 
 `JamesDspBaseEngine` and `JamesDspLocalEngine` expose matching slot-aware methods. Existing callers continue to work unchanged.
 
-Remote-engine support must either implement equivalent slot-aware transport or explicitly report unsupported behavior without breaking slot-0 compatibility. The implementation plan must inspect the existing remote-engine contract before changing it.
+`JamesDspRemoteEngine` currently reports `supportsEelVmAccess() == false` and its EEL VM utilities are intentionally unavailable. This feature will preserve that contract: remote-engine slot-aware enumeration/manipulation returns empty/false and does not add a new remote transport protocol. Slot-aware host-variable control is therefore a local/rootless-engine capability in this change.
 
 ## Locking
 
@@ -179,6 +180,14 @@ The following must remain valid:
 // processing
 ```
 
+A minimal script containing only `@sample` must also remain valid:
+
+```eel
+@sample
+spl0 *= 0.5;
+spl1 *= 0.5;
+```
+
 New full lifecycle scripts must load in all four slots:
 
 ```eel
@@ -194,8 +203,6 @@ New full lifecycle scripts must load in all four slots:
 @sample
 // audio-rate DSP
 ```
-
-Scripts with `@sample` only are accepted if the hardened reference behavior permits it; this must match the 051 reference implementation rather than reintroducing the old mandatory-`@init` rule.
 
 ## Verification Strategy
 
@@ -262,7 +269,7 @@ Load four different scripts simultaneously and verify:
 ### Regression checks
 
 - Existing LiveProg enable/disable behavior.
-- Existing freeze behavior for slot 0; determine whether slot-aware freeze is needed only if current UI exposes freeze controls for extra slots.
+- Preserve existing slot-0 freeze behavior exactly. Multi-slot freeze controls are out of scope because the current application exposes no extra-slot VM freeze UI/API.
 - Existing reorderable chain.
 - Non-finite output sanitation.
 - Script error callbacks.
@@ -291,6 +298,8 @@ Review/conditional:
 - Reworking the processing-order UI.
 - General JSFX compatibility beyond `@init`, `@slider`, `@block`, `@sample` and `samplesblock`.
 - New LiveProg UI controls unrelated to making existing variable interaction slot-aware.
+- Multi-slot freeze control.
+- New remote-engine EEL VM transport.
 - Refactoring unrelated native effects.
 
 ## Success Criteria
@@ -300,7 +309,7 @@ The feature is complete when:
 1. Any of the four LiveProg slots can load legacy scripts unchanged.
 2. Any of the four slots can compile and execute `@init`, `@slider`, `@block`, and `@sample` with the lifecycle defined above.
 3. `samplesblock` is correct for every slot.
-4. Host parameter changes execute `@slider` only for the targeted slot.
+4. Local-engine host parameter changes execute `@slider` only for the targeted slot.
 5. Failed script reloads preserve the prior valid script.
 6. No manual unmatched mutex workaround remains in the migrated LiveProg path.
 7. Existing reorderable-chain behavior remains intact.
