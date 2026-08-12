@@ -28,8 +28,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: JVM tests
-        run: ./gradlew testRootlessFdroidDebugUnitTest --no-daemon
-
       - name: Build rootless F-Droid debug APK
         run: ./gradlew assembleRootlessFdroidDebug --no-daemon
+
+      - name: Compile rootless F-Droid instrumentation APK
+        run: ./gradlew assembleRootlessFdroidDebugAndroidTest --no-daemon
+
+      - name: JVM tests
+        run: ./gradlew testRootlessFdroidDebugUnitTest --no-daemon
