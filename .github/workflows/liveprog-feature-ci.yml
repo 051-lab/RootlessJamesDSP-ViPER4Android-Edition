@@ -71,4 +71,21 @@ jobs:
           arch: x86_64
           profile: pixel_7_pro
           disable-animations: true
-          script: ./gradlew connectedRootlessFdroidDebugAndroidTest --no-daemon
+          script: |
+            set +e
+            ./gradlew connectedRootlessFdroidDebugAndroidTest --no-daemon --stacktrace --info 2>&1 | tee liveprog-instrumentation.log
+            status=${PIPESTATUS[0]}
+            adb logcat -d > liveprog-logcat.txt 2>&1 || true
+            exit $status
+
+      - name: Upload LiveProg emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liveprog-emulator-diagnostics
+          if-no-files-found: warn
+          path: |
+            liveprog-instrumentation.log
+            liveprog-logcat.txt
+            app/build/reports/androidTests/**
+            app/build/outputs/androidTest-results/**
