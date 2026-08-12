@@ -449,7 +449,7 @@ typedef struct
 	float buf[SF_REVERB_APS];
 } sf_rv_allpass_st;
 // 2nd order all-pass filter
-// maximum sizes of the two buffers
+// maximum sizes of the two buffers and maximum mod size of the first line
 #define SF_REVERB_AP2S1     4200
 #define SF_REVERB_AP2S2     3000
 typedef struct
@@ -617,8 +617,8 @@ enum JdspEffectId
 typedef struct
 {
 	NSEEL_VMCTX vm;
-	NSEEL_CODEHANDLE codehandleInit, codehandleProcess;
-	float *vmFs, *input1, *input2;
+	NSEEL_CODEHANDLE codehandleInit, codehandleSlider, codehandleBlock, codehandleProcess;
+	float *vmFs, *samplesBlock, *input1, *input2;
 	int compileSucessfully;
     int active;
 } LiveProg;
@@ -638,7 +638,7 @@ typedef struct
 #define BS2B_MINFCUT 300
 #define BS2B_MAXFCUT 2000
 /* Minimum/maximum feed level (dB * 10 @ low frequencies) */
-/* bs2b_set_level_feed() */
+/* Minimum/maximum feed level (dB * 10 @ low frequencies) */
 #define BS2B_MINFEED 10   /* 1 dB */
 #define BS2B_MAXFEED 150  /* 15 dB */
 /* Default crossfeed levels */
@@ -966,14 +966,17 @@ extern void VacuumTubeSetGain(JamesDSPLib *jdsp, double dbGain);
 extern void VacuumTubeProcess(JamesDSPLib *jdsp, size_t n);
 // Live programmable effect
 extern const char* checkErrorCode(int errCode);
+extern LiveProg *LiveProgGetSlot(JamesDSPLib *jdsp, int slot);
 extern void LiveProgConstructor(JamesDSPLib *jdsp);
 extern void LiveProgDestructor(JamesDSPLib *jdsp);
-extern int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode);
+extern int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode, char *errorBuffer, size_t errorBufferSize);
+extern int LiveProgSetVariable(JamesDSPLib *jdsp, const char *name, float value);
 extern void LiveProgEnable(JamesDSPLib *jdsp);
 extern void LiveProgDisable(JamesDSPLib *jdsp);
 extern void LiveProgProcess(JamesDSPLib *jdsp, size_t n);
 // Chained Liveprog slots. Slot 0 is the original engine; 1..3 are extra.
-extern int LiveProgStringParserSlot(JamesDSPLib *jdsp, int slot, char *eelCode);
+extern int LiveProgStringParserSlot(JamesDSPLib *jdsp, int slot, char *eelCode, char *errorBuffer, size_t errorBufferSize);
+extern int LiveProgSetVariableSlot(JamesDSPLib *jdsp, int slot, const char *name, float value);
 extern void LiveProgEnableSlot(JamesDSPLib *jdsp, int slot);
 extern void LiveProgDisableSlot(JamesDSPLib *jdsp, int slot);
 extern void LiveProgProcessSlot(JamesDSPLib *jdsp, int slot, size_t n);
