@@ -6,8 +6,6 @@
 #include <string>
 #include <jni.h>
 
-#define LPFORENSIC_JNI(...) __android_log_print(ANDROID_LOG_ERROR, "LPFORENSIC", __VA_ARGS__)
-
 #include "JamesDspWrapper.h"
 #include "JArrayList.h"
 #include "EelVmVariable.h"
@@ -914,13 +912,9 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setLiveprog(JNI
 
 static jobject enumerateEelVariablesForSlot(JNIEnv *env, JamesDSPLib *dsp, int slot)
 {
-    LPFORENSIC_JNI("ENUM_ENTRY env=%p dsp=%p slot=%d", (void*)env, (void*)dsp, slot);
     auto array = JArrayList(env);
-    LPFORENSIC_JNI("ENUM_ARRAY_READY");
     jdsp_lock(dsp);
-    LPFORENSIC_JNI("ENUM_LOCKED");
     LiveProg *pg = LiveProgGetSlot(dsp, slot);
-    LPFORENSIC_JNI("ENUM_SLOT pg=%p vm=%p", (void*)pg, pg ? pg->vm : 0);
     if (!pg || !pg->vm)
     {
         jdsp_unlock(dsp);
@@ -950,11 +944,8 @@ static jobject enumerateEelVariablesForSlot(JNIEnv *env, JamesDSPLib *dsp, int s
                     value = numericValue.c_str();
                 }
 
-                LPFORENSIC_JNI("ENUM_BEFORE_VARIABLE i=%d j=%d name=%p value=%p", i, j, (void*)name, (void*)value);
                 auto var = EelVmVariable(env, name, value, isString);
-                LPFORENSIC_JNI("ENUM_AFTER_VARIABLE valid=%d ref=%p", var.isValid(), (void*)var.getJavaReference());
                 array.add(var.getJavaReference());
-                LPFORENSIC_JNI("ENUM_AFTER_ARRAY_ADD");
             }
         }
     }
@@ -986,22 +977,15 @@ static jboolean manipulateEelVariableForSlot(JNIEnv *env, JamesDSPLib *dsp, int 
 {
     if (!name)
         return false;
-    LPFORENSIC_JNI("JNI_ENTRY env=%p dsp=%p slot=%d jstring=%p value=%f", (void*)env, (void*)dsp, slot, (void*)name, value);
-    LPFORENSIC_JNI("JNI_BEFORE_GET_STRING exception=%d", env->ExceptionCheck());
     const char *nativeName = env->GetStringUTFChars(name, nullptr);
-    LPFORENSIC_JNI("JNI_AFTER_GET_STRING nativeName=%p exception=%d", (void*)nativeName, env->ExceptionCheck());
     if (!nativeName)
         return false;
 
-    LPFORENSIC_JNI("JNI_BEFORE_SETTER");
     const bool updated = LiveProgSetVariableSlot(dsp, slot, nativeName, value) != 0;
-    LPFORENSIC_JNI("JNI_AFTER_SETTER result=%d exception=%d", updated, env->ExceptionCheck());
     if (!updated)
         LOGE("JamesDspWrapper::manipulateEelVariable: invalid or unknown variable '%s' in slot %d",
              nativeName, slot)
-    LPFORENSIC_JNI("JNI_BEFORE_RELEASE_STRING");
     env->ReleaseStringUTFChars(name, nativeName);
-    LPFORENSIC_JNI("JNI_AFTER_RELEASE_STRING exception=%d", env->ExceptionCheck());
     return updated;
 }
 
