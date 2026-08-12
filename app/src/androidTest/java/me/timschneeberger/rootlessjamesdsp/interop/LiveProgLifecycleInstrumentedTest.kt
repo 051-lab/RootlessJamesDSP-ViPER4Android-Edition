@@ -54,6 +54,8 @@ class LiveProgLifecycleInstrumentedTest {
         if (slot == 0) JamesDspWrapper.setLiveprog(handle, true, id, script)
         else JamesDspWrapper.setLiveprogSlot(handle, slot, true, id, script)
 
+    private fun resultCode(id: String): Int = callbacks.results.last { it.id == id }.code
+
     @Test
     fun slotVariableWritesAreIsolated() {
         val script0 = """
@@ -106,7 +108,45 @@ class LiveProgLifecycleInstrumentedTest {
     @Test
     fun rejectsMissingSampleAndDuplicateSections() {
         assertFalse(load(0, "missing", "@init\nx=1;"))
+        assertEquals(-2, resultCode("missing"))
+
         assertFalse(load(0, "duplicate", "@sample\nx=1;\n@sample\ny=2;"))
+        assertEquals(-6, resultCode("duplicate"))
+    }
+
+    @Test
+    fun reportsSyntaxErrorForTheCorrectLifecycleStage() {
+        val badInit = """
+            @init
+            broken = ;
+            @sample
+            spl0 = spl0; spl1 = spl1;
+        """.trimIndent()
+        val badSlider = """
+            @slider
+            broken = ;
+            @sample
+            spl0 = spl0; spl1 = spl1;
+        """.trimIndent()
+        val badBlock = """
+            @block
+            broken = ;
+            @sample
+            spl0 = spl0; spl1 = spl1;
+        """.trimIndent()
+        val badSample = """
+            @sample
+            broken = ;
+        """.trimIndent()
+
+        assertFalse(load(0, "bad-init", badInit))
+        assertEquals(-1, resultCode("bad-init"))
+        assertFalse(load(0, "bad-slider", badSlider))
+        assertEquals(-4, resultCode("bad-slider"))
+        assertFalse(load(0, "bad-block", badBlock))
+        assertEquals(-5, resultCode("bad-block"))
+        assertFalse(load(0, "bad-sample", badSample))
+        assertEquals(-3, resultCode("bad-sample"))
     }
 
     @Test
@@ -160,5 +200,92 @@ class LiveProgLifecycleInstrumentedTest {
             assertEquals(frames.toFloat(), value(slot, "seen_block_size"), 0.0001f)
             assertEquals(frames.toFloat(), value(slot, "sample_count"), 0.0001f)
         }
+    }
+
+    @Test
+    fun targetedSliderWriteOnlyExecutesTheSelectedSlot() {
+        val script = """
+            @init
+            gain = 1;
+            slider_count = 0;
+            @slider
+            slider_count += 1;
+            @sample
+            spl0 *= gain; spl1 *= gain;
+        """.trimIndent()
+
+        for (slot in 0..3) {
+            assertTrue(load(slot, "slider-isolation-$slot", script))
+            assertEquals(1f, value(slot, "slider_count"), 0.0001f)
+        }
+
+        assertTrue(JamesDspWrapper.manipulateEelVariableSlot(handle, 2, "gain", 0.6f))
+        assertEquals(1f, value(0, "slider_count"), 0.0001f)
+        assertEquals(1f, value(1, "slider_count"), 0.0001f)
+        assertEquals(2f, value(2, "slider_count"), 0.0001f)
+        assertEquals(1f, value(3, "slider_count"), 0.0001f)
+    }
+
+    @Test
+    fun invalidReloadPreservesThePreviouslyRunningProgram() {
+        val good = """
+            @init
+            gain = 0.25;
+            processed = 0;
+            @sample
+            processed += 1;
+            spl0 *= gain; spl1 *= gain;
+        """.trimIndent()
+        val bad = """
+            @init
+            gain = 0.75;
+            @slider
+            broken = ;
+            @sample
+            spl0 *= gain; spl1 *= gain;
+        """.trimIndent()
+
+        assertTrue(load(0, "good", good))
+        assertFalse(load(0, "bad-reload", bad))
+        assertEquals(-4, resultCode("bad-reload"))
+        assertEquals(0.25f, value(0, "gain"), 0.0001f)
+
+        val input = floatArrayOf(1f, 1f, 1f, 1f)
+        val output = FloatArray(input.size)
+        JamesDspWrapper.processFloat(handle, input, output, 0, input.size)
+        assertEquals(2f, value(0, "processed"), 0.0001f)
+    }
+
+    @Test
+    fun legacyInitSampleScriptStillProcesses() {
+        val legacy = """
+            @init
+            gain = 0.5;
+            @sample
+            spl0 *= gain; spl1 *= gain;
+        """.trimIndent()
+
+        assertTrue(load(0, "legacy", legacy))
+        val input = floatArrayOf(1f, -1f)
+        val output = FloatArray(input.size)
+        JamesDspWrapper.processFloat(handle, input, output, 0, input.size)
+        assertEquals(0.5f, output[0], 0.0001f)
+        assertEquals(-0.5f, output[1], 0.0001f)
+    }
+
+    @Test
+    fun nonFiniteScriptOutputIsSanitized() {
+        val script = """
+            @sample
+            spl0 = 0 / 0;
+            spl1 = 0 / 0;
+        """.trimIndent()
+
+        assertTrue(load(0, "non-finite", script))
+        val input = floatArrayOf(1f, -1f)
+        val output = FloatArray(input.size)
+        JamesDspWrapper.processFloat(handle, input, output, 0, input.size)
+        assertTrue(output[0].isFinite())
+        assertTrue(output[1].isFinite())
     }
 }
