@@ -950,8 +950,11 @@ static jobject enumerateEelVariablesForSlot(JNIEnv *env, JamesDSPLib *dsp, int s
                     value = numericValue.c_str();
                 }
 
+                LPFORENSIC_JNI("ENUM_BEFORE_VARIABLE i=%d j=%d name=%p value=%p", i, j, (void*)name, (void*)value);
                 auto var = EelVmVariable(env, name, value, isString);
+                LPFORENSIC_JNI("ENUM_AFTER_VARIABLE valid=%d ref=%p", var.isValid(), (void*)var.getJavaReference());
                 array.add(var.getJavaReference());
+                LPFORENSIC_JNI("ENUM_AFTER_ARRAY_ADD");
             }
         }
     }
