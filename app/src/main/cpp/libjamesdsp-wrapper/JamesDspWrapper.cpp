@@ -914,9 +914,13 @@ Java_me_timschneeberger_rootlessjamesdsp_interop_JamesDspWrapper_setLiveprog(JNI
 
 static jobject enumerateEelVariablesForSlot(JNIEnv *env, JamesDSPLib *dsp, int slot)
 {
+    LPFORENSIC_JNI("ENUM_ENTRY env=%p dsp=%p slot=%d", (void*)env, (void*)dsp, slot);
     auto array = JArrayList(env);
+    LPFORENSIC_JNI("ENUM_ARRAY_READY");
     jdsp_lock(dsp);
+    LPFORENSIC_JNI("ENUM_LOCKED");
     LiveProg *pg = LiveProgGetSlot(dsp, slot);
+    LPFORENSIC_JNI("ENUM_SLOT pg=%p vm=%p", (void*)pg, pg ? pg->vm : 0);
     if (!pg || !pg->vm)
     {
         jdsp_unlock(dsp);
