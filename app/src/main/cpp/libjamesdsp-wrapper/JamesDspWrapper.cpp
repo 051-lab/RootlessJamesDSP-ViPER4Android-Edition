@@ -977,15 +977,22 @@ static jboolean manipulateEelVariableForSlot(JNIEnv *env, JamesDSPLib *dsp, int 
 {
     if (!name)
         return false;
+    LOGD("LPFORENSIC JNI_ENTRY env=%p dsp=%p slot=%d jstring=%p value=%f", (void*)env, (void*)dsp, slot, (void*)name, value);
+    LOGD("LPFORENSIC JNI_BEFORE_GET_STRING exception=%d", env->ExceptionCheck());
     const char *nativeName = env->GetStringUTFChars(name, nullptr);
+    LOGD("LPFORENSIC JNI_AFTER_GET_STRING nativeName=%p exception=%d", (void*)nativeName, env->ExceptionCheck());
     if (!nativeName)
         return false;
 
+    LOGD("LPFORENSIC JNI_BEFORE_SETTER");
     const bool updated = LiveProgSetVariableSlot(dsp, slot, nativeName, value) != 0;
+    LOGD("LPFORENSIC JNI_AFTER_SETTER result=%d exception=%d", updated, env->ExceptionCheck());
     if (!updated)
         LOGE("JamesDspWrapper::manipulateEelVariable: invalid or unknown variable '%s' in slot %d",
              nativeName, slot)
+    LOGD("LPFORENSIC JNI_BEFORE_RELEASE_STRING");
     env->ReleaseStringUTFChars(name, nativeName);
+    LOGD("LPFORENSIC JNI_AFTER_RELEASE_STRING exception=%d", env->ExceptionCheck());
     return updated;
 }
 

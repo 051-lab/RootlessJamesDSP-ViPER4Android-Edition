@@ -6,6 +6,12 @@ void NSEEL_HOSTSTUB_LeaveMutex() { }
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+#define LPFORENSIC(...) __android_log_print(ANDROID_LOG_ERROR, "LPFORENSIC", __VA_ARGS__)
+#else
+#define LPFORENSIC(...) ((void)0)
+#endif
 
 enum
 {
@@ -376,14 +382,24 @@ typedef struct
 
 static int32_t LiveProgFindVariableCallback(const char *name, float *value, void *userctx)
 {
+	LPFORENSIC("CALLBACK_ENTRY name=%p value=%p userctx=%p", (void*)name, (void*)value, userctx);
 	LiveProgVariableLookup *lookup = (LiveProgVariableLookup*)userctx;
+	LPFORENSIC("CALLBACK_LOOKUP lookup=%p lookup_name=%p", (void*)lookup, lookup ? (void*)lookup->name : 0);
 	if (!lookup || !name || !value)
 		return 1;
-	if (!strcmp(name, lookup->name))
+	LPFORENSIC("BEFORE_STRCMP n=%s requested=%s", name, lookup->name);
+	int result = strcmp(name, lookup->name);
+	LPFORENSIC("AFTER_STRCMP result=%d", result);
+	if (!result)
 	{
+		LPFORENSIC("MATCH_FOUND value=%p", (void*)value);
+		LPFORENSIC("BEFORE_STORE_LOOKUP_POINTER");
 		lookup->value = value;
+		LPFORENSIC("AFTER_STORE_LOOKUP_POINTER");
+		LPFORENSIC("RETURN_FROM_CALLBACK");
 		return 0;
 	}
+	LPFORENSIC("RETURN_FROM_CALLBACK");
 	return 1;
 }
 
@@ -392,35 +408,61 @@ static float *LiveProgFindVariable(LiveProg *pg, const char *name)
 	if (!pg || !pg->vm || !name)
 		return 0;
 	LiveProgVariableLookup lookup = { name, 0 };
+	LPFORENSIC("FIND_ENTRY pg=%p vm=%p name=%p lookup=%p lookup_name=%p", (void*)pg, pg->vm, (void*)name, (void*)&lookup, (void*)lookup.name);
+	LPFORENSIC("BEFORE_ENUMALLVARS");
 	NSEEL_VM_enumallvars(pg->vm, LiveProgFindVariableCallback, &lookup);
+	LPFORENSIC("AFTER_ENUMALLVARS value=%p", (void*)lookup.value);
+	if (!lookup.value)
+		LPFORENSIC("LOOKUP_VALUE_NULL");
 	return lookup.value;
 }
 
 int LiveProgSetVariableSlot(JamesDSPLib *jdsp, int slot, const char *name, float value)
 {
+	LPFORENSIC("SETTER_ENTRY jdsp=%p slot=%d name=%p name_text=%s value=%f", (void*)jdsp, slot, (void*)name, name ? name : "<null>", value);
 	if (!jdsp || !name || !*name || !isfinite(value))
 		return 0;
+	LPFORENSIC("BEFORE_STRLEN");
 	const size_t nameLength = strlen(name);
+	LPFORENSIC("AFTER_STRLEN len=%zu", nameLength);
 	if (nameLength > NSEEL_MAX_VARIABLE_NAMELEN ||
 		!(isalpha((unsigned char)name[0]) || name[0] == '_'))
 		return 0;
 	for (size_t i = 1; i < nameLength; i++)
 		if (!(isalnum((unsigned char)name[i]) || name[i] == '_'))
 			return 0;
+	LPFORENSIC("AFTER_IDENTIFIER_VALIDATION");
 
+	LPFORENSIC("BEFORE_LOCK");
 	jdsp_lock(jdsp);
+	LPFORENSIC("AFTER_LOCK");
+	LPFORENSIC("BEFORE_GET_SLOT");
 	LiveProg *pg = LiveProgGetSlot(jdsp, slot);
+	LPFORENSIC("AFTER_GET_SLOT pg=%p", (void*)pg);
+	if (pg)
+		LPFORENSIC("STATE vm=%p compiled=%d active=%d init=%p slider=%p block=%p process=%p vmFs=%p samplesBlock=%p input1=%p input2=%p", pg->vm, pg->compileSucessfully, pg->active, pg->codehandleInit, pg->codehandleSlider, pg->codehandleBlock, pg->codehandleProcess, (void*)pg->vmFs, (void*)pg->samplesBlock, (void*)pg->input1, (void*)pg->input2);
+	LPFORENSIC("BEFORE_FIND_VARIABLE");
 	float *variable = pg && pg->compileSucessfully
 		? LiveProgFindVariable(pg, name) : 0;
+	LPFORENSIC("AFTER_FIND_VARIABLE variable=%p", (void*)variable);
 	if (!variable)
 	{
 		jdsp_unlock(jdsp);
 		return 0;
 	}
+	LPFORENSIC("BEFORE_VARIABLE_WRITE alignment=%zu", (size_t)((uintptr_t)variable & 3));
 	*variable = value;
+	LPFORENSIC("AFTER_VARIABLE_WRITE");
 	if (pg->codehandleSlider)
+	{
+		LPFORENSIC("BEFORE_SLIDER_EXECUTE");
 		NSEEL_code_execute(pg->codehandleSlider);
+		LPFORENSIC("AFTER_SLIDER_EXECUTE");
+	}
+	LPFORENSIC("BEFORE_UNLOCK");
 	jdsp_unlock(jdsp);
+	LPFORENSIC("AFTER_UNLOCK");
+	LPFORENSIC("SETTER_RETURN");
 	return 1;
 }
 

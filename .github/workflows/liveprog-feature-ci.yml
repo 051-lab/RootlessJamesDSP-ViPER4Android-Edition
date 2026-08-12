@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/liveprog-slider-block
+      - debug/liveprog-x86_64-forensics
   workflow_dispatch:
 
 concurrency:
@@ -73,6 +74,9 @@ jobs:
           disable-animations: true
           script: |
             adb logcat -c || true
+            adb shell getprop ro.product.cpu.abi > emulator-props.txt || true
+            adb shell getprop ro.build.version.sdk >> emulator-props.txt || true
+            adb shell getprop ro.build.version.release >> emulator-props.txt || true
             adb logcat -v threadtime > liveprog-logcat.txt 2>&1 &
             logcat_pid=$!
             set +e
@@ -81,6 +85,8 @@ jobs:
             kill $logcat_pid 2>/dev/null || true
             wait $logcat_pid 2>/dev/null || true
             cat liveprog-instrumentation.log
+            adb logcat -b crash -d > liveprog-crash-buffer.txt || true
+            adb shell ls -la /data/tombstones > liveprog-tombstones-list.txt 2>&1 || true
             exit $status
 
       - name: Upload LiveProg emulator diagnostics
@@ -92,5 +98,7 @@ jobs:
           path: |
             liveprog-instrumentation.log
             liveprog-logcat.txt
-            app/build/reports/androidTests/**
+            emulator-props.txt
+            liveprog-crash-buffer.txt
+            liveprog-tombstones-list.txt
             app/build/outputs/androidTest-results/**
