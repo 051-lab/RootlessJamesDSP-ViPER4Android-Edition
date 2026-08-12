@@ -368,21 +368,32 @@ int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode,
 	return LiveProgStringParserSlot(jdsp, 0, eelCode, errorBuffer, errorBufferSize);
 }
 
+typedef struct
+{
+	const char *name;
+	float *value;
+} LiveProgVariableLookup;
+
+static int32_t LiveProgFindVariableCallback(const char *name, float *value, void *userctx)
+{
+	LiveProgVariableLookup *lookup = (LiveProgVariableLookup*)userctx;
+	if (!lookup || !name || !value)
+		return 1;
+	if (!strcmp(name, lookup->name))
+	{
+		lookup->value = value;
+		return 0;
+	}
+	return 1;
+}
+
 static float *LiveProgFindVariable(LiveProg *pg, const char *name)
 {
 	if (!pg || !pg->vm || !name)
 		return 0;
-	compileContext *ctx = (compileContext*)pg->vm;
-	for (int i = 0; i < ctx->varTable_numBlocks; i++)
-	{
-		for (int j = 0; j < NSEEL_VARS_PER_BLOCK; j++)
-		{
-			const char *candidate = ctx->varTable_Names[i][j];
-			if (candidate && !strcmp(candidate, name))
-				return &ctx->varTable_Values[i][j];
-		}
-	}
-	return 0;
+	LiveProgVariableLookup lookup = { name, 0 };
+	NSEEL_VM_enumallvars(pg->vm, LiveProgFindVariableCallback, &lookup);
+	return lookup.value;
 }
 
 int LiveProgSetVariableSlot(JamesDSPLib *jdsp, int slot, const char *name, float value)
