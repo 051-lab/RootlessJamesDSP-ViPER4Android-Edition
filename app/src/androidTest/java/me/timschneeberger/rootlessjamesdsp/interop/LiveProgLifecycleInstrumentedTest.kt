@@ -1,5 +1,6 @@
 package me.timschneeberger.rootlessjamesdsp.interop
 
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import me.timschneeberger.rootlessjamesdsp.model.ProcessorMessage
 import org.junit.After
@@ -31,18 +32,23 @@ class LiveProgLifecycleInstrumentedTest {
 
     @Before
     fun setUp() {
+        Log.i(TAG, "setUp: before alloc")
         callbacks = Callbacks()
         handle = JamesDspWrapper.alloc(callbacks)
+        Log.i(TAG, "setUp: after alloc handle=$handle")
         assertTrue(handle != 0L)
         JamesDspWrapper.setSamplingRate(handle, 48_000f, false)
+        Log.i(TAG, "setUp: after sample rate")
     }
 
     @After
     fun tearDown() {
+        Log.i(TAG, "tearDown: begin handle=$handle")
         if (handle != 0L) {
             JamesDspWrapper.free(handle)
             handle = 0L
         }
+        Log.i(TAG, "tearDown: complete")
     }
 
     private fun variables(slot: Int) = JamesDspWrapper.enumerateEelVariablesSlot(handle, slot)
@@ -71,14 +77,24 @@ class LiveProgLifecycleInstrumentedTest {
             spl0 *= gain; spl1 *= gain;
         """.trimIndent()
 
+        Log.i(TAG, "slotIsolation: before load slot0")
         assertTrue(load(0, "slot0", script0))
+        Log.i(TAG, "slotIsolation: after load slot0")
         assertTrue(load(1, "slot1", script1))
-        assertEquals(0.25f, value(0, "gain"), 0.0001f)
-        assertEquals(0.75f, value(1, "gain"), 0.0001f)
+        Log.i(TAG, "slotIsolation: after load slot1")
 
+        Log.i(TAG, "slotIsolation: before enumerate slot0")
+        assertEquals(0.25f, value(0, "gain"), 0.0001f)
+        Log.i(TAG, "slotIsolation: after enumerate slot0")
+        assertEquals(0.75f, value(1, "gain"), 0.0001f)
+        Log.i(TAG, "slotIsolation: after enumerate slot1")
+
+        Log.i(TAG, "slotIsolation: before manipulate slot1")
         assertTrue(JamesDspWrapper.manipulateEelVariableSlot(handle, 1, "gain", 0.5f))
+        Log.i(TAG, "slotIsolation: after manipulate slot1")
         assertEquals(0.25f, value(0, "gain"), 0.0001f)
         assertEquals(0.5f, value(1, "gain"), 0.0001f)
+        Log.i(TAG, "slotIsolation: complete")
     }
 
     @Test
@@ -287,5 +303,9 @@ class LiveProgLifecycleInstrumentedTest {
         JamesDspWrapper.processFloat(handle, input, output, 0, input.size)
         assertTrue(output[0].isFinite())
         assertTrue(output[1].isFinite())
+    }
+
+    private companion object {
+        const val TAG = "LiveProgLifecycleTest"
     }
 }
