@@ -65,7 +65,9 @@ object JamesDspWrapper {
 
     // EEL VM utilities
     external fun enumerateEelVariables(self: JamesDspHandle): ArrayList<EelVmVariable>
+    external fun enumerateEelVariablesSlot(self: JamesDspHandle, slot: Int): ArrayList<EelVmVariable>
     external fun manipulateEelVariable(self: JamesDspHandle, name: String, value: Float): Boolean
+    external fun manipulateEelVariableSlot(self: JamesDspHandle, slot: Int, name: String, value: Float): Boolean
     external fun freezeLiveprogExecution(self: JamesDspHandle, freeze: Boolean)
     external fun eelErrorCodeToString(errorCode: Int): String
 
