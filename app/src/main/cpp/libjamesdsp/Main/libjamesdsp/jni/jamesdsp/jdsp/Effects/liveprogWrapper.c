@@ -368,6 +368,23 @@ int LiveProgStringParser(JamesDSPLib *jdsp, char *eelCode,
 	return LiveProgStringParserSlot(jdsp, 0, eelCode, errorBuffer, errorBufferSize);
 }
 
+static float *LiveProgFindVariable(LiveProg *pg, const char *name)
+{
+	if (!pg || !pg->vm || !name)
+		return 0;
+	compileContext *ctx = (compileContext*)pg->vm;
+	for (int i = 0; i < ctx->varTable_numBlocks; i++)
+	{
+		for (int j = 0; j < NSEEL_VARS_PER_BLOCK; j++)
+		{
+			const char *candidate = ctx->varTable_Names[i][j];
+			if (candidate && !strcmp(candidate, name))
+				return &ctx->varTable_Values[i][j];
+		}
+	}
+	return 0;
+}
+
 int LiveProgSetVariableSlot(JamesDSPLib *jdsp, int slot, const char *name, float value)
 {
 	if (!jdsp || !name || !*name || !isfinite(value))
@@ -382,8 +399,8 @@ int LiveProgSetVariableSlot(JamesDSPLib *jdsp, int slot, const char *name, float
 
 	jdsp_lock(jdsp);
 	LiveProg *pg = LiveProgGetSlot(jdsp, slot);
-	float *variable = pg && pg->vm && pg->compileSucessfully
-		? NSEEL_VM_getvar(pg->vm, name) : 0;
+	float *variable = pg && pg->compileSucessfully
+		? LiveProgFindVariable(pg, name) : 0;
 	if (!variable)
 	{
 		jdsp_unlock(jdsp);
