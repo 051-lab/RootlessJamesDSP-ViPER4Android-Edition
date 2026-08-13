@@ -27,6 +27,14 @@ class SwitchPreferenceGroup(context: Context, attrs: AttributeSet) : PreferenceG
     private var itemView: View? = null
     private var bgAnimation: ValueAnimator? = null
     private var isIconVisible: Boolean = false
+
+    /**
+     * When set, user taps are routed here instead of changing this preference.
+     * Needed because this class drives its switch directly and never calls
+     * OnPreferenceChangeListener, so that listener can't intercept a toggle.
+     */
+    var onUserToggle: ((Boolean) -> Unit)? = null
+    private var suppressToggleCallback = false
     private var state = false
 
     init {
@@ -45,6 +53,10 @@ class SwitchPreferenceGroup(context: Context, attrs: AttributeSet) : PreferenceG
 
         itemView = holder.itemView
         itemView?.background = ContextCompat.getDrawable(context, R.drawable.shape_rounded_highlight)
+        // Classic layout keeps every row the same colour whether the effect is
+        // on or off; only the switch itself shows state. This must NOT skip the
+        // rest of binding - the switch, the expand behaviour and the row click
+        // listener all live below.
         itemView?.background?.alpha = 0
 
         bgAnimation = ValueAnimator.ofInt(TRANSITION_MIN, TRANSITION_MAX).apply {
@@ -59,12 +71,18 @@ class SwitchPreferenceGroup(context: Context, attrs: AttributeSet) : PreferenceG
         setIsIconVisible(isIconVisible)
 
         switch = (holder.findViewById(R.id.switchWidget) as MaterialSwitch).apply {
-            // Apply initial state
+            // Apply initial state. Guarded: a recycled switch may still carry a
+            // listener, and assigning isChecked would fire it as a user toggle.
+            suppressToggleCallback = true
             isChecked = state
+            suppressToggleCallback = false
             isVisible = isSelectable
 
             setOnCheckedChangeListener { _, isChecked ->
-                setValueInternal(isChecked, false)
+                if (suppressToggleCallback) return@setOnCheckedChangeListener
+                val handler = onUserToggle
+                if (handler != null) handler(isChecked)
+                else setValueInternal(isChecked, false)
             }
         }
 
@@ -103,6 +121,15 @@ class SwitchPreferenceGroup(context: Context, attrs: AttributeSet) : PreferenceG
     }
 
     private fun animateHeaderState(selected: Boolean) {
+        // Classic layout: rows never change colour with state. Guarded here
+        // rather than at each call site so no path can re-tint them.
+        val classic = context?.let {
+            me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isClassicLayout(it)
+        } ?: false
+        if (classic) {
+            itemView?.background?.alpha = 0
+            return
+        }
         val current = bgAnimation?.animatedValueAs<Int>() ?: 0
         if(selected && current < TRANSITION_MAX)
             bgAnimation?.start()
@@ -117,12 +144,23 @@ class SwitchPreferenceGroup(context: Context, attrs: AttributeSet) : PreferenceG
     }
 
     private fun setChildrenVisibility(visible: Boolean) {
+        // V4A-only mode has no explanation rows. Enforced here rather than once
+        // at setup, because expanding a card re-shows every child and would
+        // otherwise undo it - and here it can't be missed by a card that sets
+        // its own childVisibilityFilter.
+        val hideInfo = context?.let {
+            me.timschneeberger.rootlessjamesdsp.utils.V4aMode.isOn(it)
+        } ?: false
         children.forEach {
-            it.isVisible = visible && (childVisibilityFilter?.invoke(it) != false)
+            val allowed = (childVisibilityFilter?.invoke(it) != false) &&
+                    !(hideInfo && it.key == KEY_SECTION_INFO)
+            it.isVisible = visible && allowed
         }
     }
 
     companion object {
+        private const val KEY_SECTION_INFO = "section_info"
+
         private const val TRANSITION_MIN = 0
         private const val TRANSITION_MAX = 255
     }

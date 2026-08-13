@@ -215,6 +215,7 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
 
             cache.select(Constants.PREF_GEQ)
             val geqEnabled = cache.get(R.string.key_geq_enable, false)
+            val geqLinearPhase = cache.get(R.string.key_geq_linear_phase, false)
             val geqBands = cache.get(R.string.key_geq_nodes, Constants.DEFAULT_GEQ_INTERNAL)
 
             cache.select(Constants.PREF_PEQ)
@@ -297,8 +298,16 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
                     )
                     Constants.PREF_SPECTRUMEXT -> setSpectrumExtension(spxEnabled, spxBark, spxStrength)
                     Constants.PREF_EQ -> setMultiEqualizer(eqEnabled, eqFilterType, eqInterpolationMode, eqBands)
-                    Constants.PREF_GEQ -> setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
-                    Constants.PREF_PEQ -> setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
+                    Constants.PREF_GEQ -> {
+                        // Phase mode first: it rebuilds the coefficient
+                        // generator, so the nodes must be re-sent after it.
+                        setEqPhaseMode(geqLinearPhase)
+                        setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
+                    }
+                    Constants.PREF_PEQ -> {
+                        setEqPhaseMode(geqLinearPhase)
+                        setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
+                    }
                     Constants.PREF_REVERB -> setReverb(reverbEnabled, reverbPreset)
                     Constants.PREF_STEREOWIDE -> setStereoEnhancement(swEnabled, swMode)
                     Constants.PREF_CROSSFEED -> setCrossfeed(crossfeedEnabled, crossfeedMode)
@@ -637,6 +646,8 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
         irCrc: Int,
         irSampleRate: Int,
     ): Boolean
+    abstract fun setEqPhaseMode(linearPhase: Boolean): Boolean
+
     protected abstract fun setGraphicEqInternal(enable: Boolean, bands: String): Boolean
     protected abstract fun setLiveprogInternal(enable: Boolean, name: String, script: String): Boolean
 
@@ -667,6 +678,13 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
 
     /** Pushes the user's processing order (if any) down to the engine. */
     fun applyChainOrder() {
+        // V4A-only mode runs the original ViPER4Android chain. Pinned at read
+        // time so the user's own order is preserved and returns untouched when
+        // the mode is switched off.
+        if (V4aMode.isOn(context)) {
+            setChainOrder(V4aMode.v4aChainOrder)
+            return
+        }
         val saved = context
             .getSharedPreferences(Constants.PREF_CHAIN_ORDER, Context.MODE_PRIVATE)
             .getString(Constants.KEY_CHAIN_ORDER, null)

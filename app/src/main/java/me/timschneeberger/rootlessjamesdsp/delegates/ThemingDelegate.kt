@@ -17,6 +17,7 @@ interface ThemingDelegate {
                 AppTheme.MONET -> R.style.Theme_RootlessJamesDSP_Monet
                 AppTheme.VIPER -> R.style.Theme_RootlessJamesDSP_Viper
                 AppTheme.V4A_CLASSIC -> R.style.Theme_RootlessJamesDSP_V4AClassic
+                AppTheme.CUSTOM -> R.style.Theme_RootlessJamesDSP
                 AppTheme.GREEN_APPLE -> R.style.Theme_RootlessJamesDSP_GreenApple
                 AppTheme.STRAWBERRY_DAIQUIRI -> R.style.Theme_RootlessJamesDSP_StrawberryDaiquiri
                 AppTheme.HONEY -> R.style.Theme_RootlessJamesDSP_Honey
@@ -52,5 +53,31 @@ class ThemingDelegateImpl : ThemingDelegate, KoinComponent {
         }
         val appTheme = AppTheme.valueOf(preferences.get((R.string.key_appearance_app_theme)))
         ThemingDelegate.getThemeResIds(appTheme, isAmoled).forEach { activity.setTheme(it) }
+
+        // A custom theme is a seed colour: the palette is generated from it at
+        // apply time, so the scheme stays coherent instead of being a pile of
+        // hand-picked values that clash.
+        if (appTheme == AppTheme.CUSTOM) {
+            me.timschneeberger.rootlessjamesdsp.utils.CustomThemeStore.active(activity)?.let { t ->
+                if (t.amoled)
+                    activity.theme.applyStyle(R.style.ThemeOverlay_RootlessJamesDSP_Amoled, true)
+                // This Material version derives the palette from an image, so
+                // hand it a solid swatch of the seed - the extracted source is
+                // then exactly the colour the user chose.
+                // In manual mode the accent the user picked for Primary is what
+                // drives the scheme, so the colour they chose is the colour the
+                // app's accents actually become.
+                val source = if (t.manual) t.colors["Primary"] ?: t.seed else t.seed
+                val swatch = android.graphics.Bitmap.createBitmap(
+                    8, 8, android.graphics.Bitmap.Config.ARGB_8888
+                ).apply { eraseColor(source) }
+                com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(
+                    activity,
+                    com.google.android.material.color.DynamicColorsOptions.Builder()
+                        .setContentBasedSource(swatch)
+                        .build()
+                )
+            }
+        }
     }
 }

@@ -140,14 +140,106 @@ class MainActivity : BaseActivity() {
     }
 
     @SuppressLint("BatteryLife")
+    /**
+     * Classic layout replaces the power FAB with the master limiter switch.
+     * Both drive the same code path - the switch just performs the FAB's click
+     * - so permission handling and root/rootless branching stay in one place.
+     */
+    /** Bottom-bar actions, shared with the classic layout's top-right menu. */
+    private fun handleMainMenu(itemId: Int): Boolean {
+        return when (itemId) {
+
+                R.id.action_blocklist -> {
+                    if(!app.isEnhancedProcessing && isRoot()) {
+                        showAlert(
+                            R.string.enhanced_processing_feature_unavailable,
+                            R.string.enhanced_processing_feature_unavailable_content
+                        )
+                    }
+                    else
+                        startActivity(Intent(this, BlocklistActivity::class.java))
+                    true
+                }
+                R.id.action_presets -> {
+                    if (presetDialogHost == null) {
+                        Timber.d("Initialize preset dialog host")
+                        presetDialogHost = FakePresetFragment.newInstance()
+                        supportFragmentManager.beginTransaction()
+                            .add(R.id.dsp_fragment_container, presetDialogHost!!)
+                            .commitNow()
+                    }
+                    presetDialogHost?.pref?.refresh()
+
+                    val dialogFragment = FileLibraryDialogFragment.newInstance("presets")
+                    @Suppress("DEPRECATION")
+                    dialogFragment.setTargetFragment(presetDialogHost, 0)
+                    dialogFragment.show(supportFragmentManager, null)
+                    true
+                }
+                R.id.action_revert -> {
+                    this.showYesNoAlert(
+                        R.string.revert_confirmation_title,
+                        R.string.revert_confirmation
+                    ) {
+                        if(it)
+                            restoreDspSettings()
+                    }
+                    true
+                }
+                else -> false
+        }
+    }
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        if (me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isClassicLayout(this)) {
+            // Inflated here, not by hand: the toolbar is the support action bar,
+            // so the framework owns its menu and would wipe a manual inflate.
+            menuInflater.inflate(R.menu.menu_main_classic, menu)
+            return true
+        }
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                startActivity(Intent(this, SettingsActivity::class.java)); true
+            }
+            R.id.action_more -> {
+                val anchorView = findViewById<android.view.View>(R.id.action_more) ?: binding.toolbar
+                androidx.appcompat.widget.PopupMenu(this, anchorView).apply {
+                    menuInflater.inflate(R.menu.menu_main_bottom, menu)
+                    if (isPlugin() || (isRoot() && !app.isEnhancedProcessing))
+                        menu.removeItem(R.id.action_blocklist)
+                    setOnMenuItemClickListener { handleMainMenu(it.itemId) }
+                }.show()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    /**
+     * Notified whenever power state changes. The processing service reports in
+     * asynchronously (service bind, plus started/stopped broadcasts), so any UI
+     * mirroring the FAB must observe rather than read once - reading early is
+     * how the classic layout's switch ended up showing the opposite of reality.
+     */
+    var onPowerStateChanged: ((Boolean) -> Unit)? = null
+
+    fun requestPowerToggle() {
+        if (::binding.isInitialized) binding.powerToggle.performClick()
+    }
+
+    /**
+     * Restored fragments run inside super.onCreate, before setContentView has
+     * assigned [binding], so this must never assume the view exists.
+     */
+    val isPowerOn: Boolean
+        get() = ::binding.isInitialized && binding.powerToggle.isToggled
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (me.timschneeberger.rootlessjamesdsp.utils.V4aMode.isOn(this))
-            title = "ViPER4Android FX"
-        // Classic theme: title sits left, as in V4A and the modern RE port,
-        // instead of the centred style used elsewhere.
-        if (me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isEnabled(this))
-            binding.toolbar.isTitleCentered = false
 
         run {
             val crash = java.io.File(filesDir, "last_crash.txt")
@@ -206,6 +298,31 @@ class MainActivity : BaseActivity() {
 
         // Setup views
         setContentView(binding.root)
+
+        if (me.timschneeberger.rootlessjamesdsp.utils.V4aMode.isOn(this))
+            title = "ViPER4Android FX"
+        // Classic theme: title sits left, as in V4A and the modern RE port.
+        // This must run after setContentView - binding is lateinit and is only
+        // assigned during inflation, so touching it earlier crashes on launch.
+        if (me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isEnabled(this))
+            binding.toolbar.isTitleCentered = false
+
+        // Classic layout: header matches the background with a plain shadow and
+        // never recolours on scroll; menus move to the top right (overflow dots
+        // left of the settings cog); the bottom bar and its power FAB give way
+        // to the master limiter switch, which becomes the power control.
+        if (me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isClassicLayout(this)) {
+            val bg = android.util.TypedValue().also {
+                theme.resolveAttribute(android.R.attr.colorBackground, it, true)
+            }.data
+            binding.appBarLayout.apply {
+                isLiftOnScroll = false
+                setBackgroundColor(bg)
+                elevation = resources.displayMetrics.density * 4f
+                setStateListAnimator(null)
+            }
+            binding.toolbar.setBackgroundColor(bg)
+        }
         setSupportActionBar(binding.toolbar)
 
         actionBar?.setDisplayHomeAsUpEnabled(true)
@@ -245,6 +362,23 @@ class MainActivity : BaseActivity() {
         }
 
         // Inflate bottom left menu
+        val classicLayout = me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isClassicLayout(this)
+        if (classicLayout) {
+            // Menus live in the top bar now (see onCreateOptionsMenu); the
+            // bottom bar and power FAB give way to the classic footer.
+            binding.bar.isVisible = false
+            binding.powerToggle.isVisible = false
+            binding.classicFooter.isVisible = true
+            // Hosted here rather than reparented out of the scroll list:
+            // moving a FragmentContainerView across hierarchies breaks on
+            // recreate, which is exactly what a theme switch triggers.
+            if (supportFragmentManager.findFragmentById(R.id.classic_footer) == null) {
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.classic_footer,
+                        me.timschneeberger.rootlessjamesdsp.fragment.DeviceProfilesCardFragment.newInstance())
+                    .commitAllowingStateLoss()
+            }
+        }
         menuInflater.inflate(R.menu.menu_main_bottom_left, binding.leftMenu.menu)
         binding.leftMenu.setOnMenuItemClickListener { arg0 ->
             if (arg0.itemId == R.id.action_settings) {
@@ -261,48 +395,8 @@ class MainActivity : BaseActivity() {
         if(isPlugin() || (isRoot() && !app.isEnhancedProcessing))
             binding.bar.menu.removeItem(R.id.action_blocklist)
 
-        binding.bar.setOnMenuItemClickListener { arg0 ->
-            when (arg0.itemId) {
-                R.id.action_blocklist -> {
-                    if(!app.isEnhancedProcessing && isRoot()) {
-                        showAlert(
-                            R.string.enhanced_processing_feature_unavailable,
-                            R.string.enhanced_processing_feature_unavailable_content
-                        )
-                    }
-                    else
-                        startActivity(Intent(this, BlocklistActivity::class.java))
-                    true
-                }
-                R.id.action_presets -> {
-                    if (presetDialogHost == null) {
-                        Timber.d("Initialize preset dialog host")
-                        presetDialogHost = FakePresetFragment.newInstance()
-                        supportFragmentManager.beginTransaction()
-                            .add(R.id.dsp_fragment_container, presetDialogHost!!)
-                            .commitNow()
-                    }
-                    presetDialogHost?.pref?.refresh()
+        binding.bar.setOnMenuItemClickListener { arg0 -> handleMainMenu(arg0.itemId) }
 
-                    val dialogFragment = FileLibraryDialogFragment.newInstance("presets")
-                    @Suppress("DEPRECATION")
-                    dialogFragment.setTargetFragment(presetDialogHost, 0)
-                    dialogFragment.show(supportFragmentManager, null)
-                    true
-                }
-                R.id.action_revert -> {
-                    this.showYesNoAlert(
-                        R.string.revert_confirmation_title,
-                        R.string.revert_confirmation
-                    ) {
-                        if(it)
-                            restoreDspSettings()
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
 
         IntentFilter(Constants.ACTION_SERVICE_STOPPED).apply {
             addAction(Constants.ACTION_SERVICE_STARTED)
@@ -312,6 +406,15 @@ class MainActivity : BaseActivity() {
         registerLocalReceiver(processorMessageReceiver, IntentFilter(Constants.ACTION_PROCESSOR_MESSAGE))
 
         // Rootless: don't toggle on click, we handle that in the onClickListener
+        // Every assignment to isToggled runs through the view's setter, so this
+        // catches all of them - including the async service-bind and broadcast
+        // paths that land after fragments have already been created.
+        binding.powerToggle.setOnToggledListener(
+            object : FloatingToggleButton.OnToggledListener {
+                override fun onToggled(toggled: Boolean) {
+                    onPowerStateChanged?.invoke(toggled)
+                }
+            })
         binding.powerToggle.toggleOnClick = false
         binding.powerToggle.setOnToggleClickListener(object : FloatingToggleButton.OnToggleClickListener{
             override fun onClick() {

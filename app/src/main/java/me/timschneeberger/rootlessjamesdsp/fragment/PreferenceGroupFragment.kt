@@ -89,6 +89,40 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
         }
     }
 
+    /**
+     * The power row is bound before the activity's view exists during restore,
+     * so re-read the real state once we're resumed.
+     */
+    override fun onDestroyView() {
+        super.onDestroyView()
+        phaseSyncListener?.let {
+            preferenceManager.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(it)
+        }
+        phaseSyncListener = null
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (arguments?.getInt(BUNDLE_XML_RES) != R.xml.dsp_output_control_preferences) return
+        if (!me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isClassicLayout(requireContext())) return
+        val host = activity as? me.timschneeberger.rootlessjamesdsp.activity.MainActivity ?: return
+        val row = preferenceScreen.getPreference(0)
+                as? me.timschneeberger.rootlessjamesdsp.preference.SwitchPreferenceGroup ?: return
+        row.setValue(host.isPowerOn)
+        // Keep following it: the service reports in after this point, so a
+        // single read here would leave the switch showing the opposite.
+        host.onPowerStateChanged = { on -> row.setValue(on) }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (arguments?.getInt(BUNDLE_XML_RES) == R.xml.dsp_output_control_preferences)
+            (activity as? me.timschneeberger.rootlessjamesdsp.activity.MainActivity)
+                ?.onPowerStateChanged = null
+    }
+
+    private var phaseSyncListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         val args = requireArguments()
         preferenceManager.sharedPreferencesName = args.getString(BUNDLE_PREF_NAME)
@@ -97,6 +131,9 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
         addPreferencesFromResource(args.getInt(BUNDLE_XML_RES))
 
         // Collapsible "What is this?" info rows (single line when collapsed)
+        // V4A-only mode mirrors the original app, which had no explanations
+        if (me.timschneeberger.rootlessjamesdsp.utils.V4aMode.isOn(requireContext()))
+            findPreference<Preference>("section_info")?.isVisible = false
         findPreference<Preference>("section_info")?.let { p ->
             val full = p.summary
             var expanded = false
@@ -128,6 +165,29 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
                 tinted.setTint(me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.tint(requireContext()))
                 pref.icon = tinted
             }
+        }
+
+        // Phase mode belongs to the combined FIR filter, so it appears on both
+        // EQ cards. They live in different namespaces, so mirror the value to
+        // keep them showing one truth.
+        findPreference<androidx.preference.TwoStatePreference>(
+            getString(R.string.key_geq_linear_phase))?.let { pref ->
+            val phaseKey = getString(R.string.key_geq_linear_phase)
+            val other = if (args.getInt(BUNDLE_XML_RES) == R.xml.dsp_graphiceq_preferences)
+                Constants.PREF_PEQ else Constants.PREF_GEQ
+            pref.setOnPreferenceChangeListener { _, v ->
+                requireContext().getSharedPreferences(other, Context.MODE_MULTI_PROCESS)
+                    .edit().putBoolean(phaseKey, v as Boolean).apply()
+                true
+            }
+            // Both EQ cards can be on screen together, and a write behind a
+            // live PreferenceScreen doesn't refresh it - so watch this card's
+            // own namespace and move the switch when the other card mirrors in.
+            phaseSyncListener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == phaseKey) pref.isChecked = sp.getBoolean(phaseKey, false)
+            }
+            preferenceManager.sharedPreferences
+                ?.registerOnSharedPreferenceChangeListener(phaseSyncListener)
         }
 
         when(args.getInt(BUNDLE_XML_RES)) {
@@ -203,6 +263,26 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
             }
             R.xml.dsp_output_control_preferences -> {
                 val v4a = me.timschneeberger.rootlessjamesdsp.utils.V4aMode.isOn(requireContext())
+                // Classic layout: this card's header switch is the master power
+                // control, exactly as V4A's Master limiter row was.
+                if (me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isClassicLayout(requireContext())) {
+                    (preferenceScreen.getPreference(0) as? me.timschneeberger.rootlessjamesdsp.preference.SwitchPreferenceGroup)?.apply {
+                        isEnabled = true
+                        isSelectable = true
+                        val host = activity as? me.timschneeberger.rootlessjamesdsp.activity.MainActivity
+                        // Safe even during restore: isPowerOn reports false
+                        // until the activity's view exists, and onResume syncs.
+                        setValue(host?.isPowerOn ?: false)
+                        // The service (and permission flow) decide the real
+                        // state, so route the tap rather than setting it here.
+                        onUserToggle = {
+                            val a = activity as? me.timschneeberger.rootlessjamesdsp.activity.MainActivity
+                            a?.requestPowerToggle()
+                            // No optimistic state here - onPowerStateChanged
+                            // reports the real result back to this switch.
+                        }
+                    }
+                }
                 val modePref = findPreference<ListPreference>(getString(R.string.key_limiter_mode))
                 if (v4a) {
                     // Original V4A master limiter: output gain, limit threshold,
@@ -242,8 +322,9 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
                         R.string.key_vreverb_diffusion, R.string.key_vreverb_mod,
                         R.string.key_vreverb_bass, R.string.key_vreverb_er)
                         .forEach { findPreference<Preference>(getString(it))?.isVisible = false }
-                    return
-                }
+                    // No early return here: icon visibility is applied after
+                    // this block, and skipping it hid the reverb icon.
+                } else {
                 // Each room type exposes only the controls it actually uses, so
                 // the card never shows a slider that does nothing.
                 fun applyModelVisibility(model: String) {
@@ -263,6 +344,7 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
                 modelPref?.setOnPreferenceChangeListener { _, newValue ->
                     applyModelVisibility(newValue as? String ?: "0")
                     true
+                }
                 }
             }
             R.xml.dsp_liveprog_preferences,

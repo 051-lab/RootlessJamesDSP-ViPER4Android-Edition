@@ -200,6 +200,8 @@ typedef struct
 	float pk[5], pkz[2][4];
 	float sh[5], shz[2][4];
 	float mix;
+	float air[5];
+	float airz[2][4];
 } SpeakerOpt;
 typedef struct
 {
@@ -715,6 +717,7 @@ typedef struct
 {
 	ArbEqConv instance;
 	FFTConvolver2x2 conv;
+	int linearPhase;
 } arbitraryMagnitude;
 typedef struct
 {
@@ -1008,6 +1011,7 @@ extern int Convolver1DLoadImpulseResponse(JamesDSPLib *jdsp, float *tempImpulseF
 // Arbitrary magnitude response
 extern void ArbitraryResponseEqualizerConstructor(JamesDSPLib *jdsp);
 extern void ArbitraryResponseEqualizerDestructor(JamesDSPLib *jdsp);
+extern void ArbitraryResponseEqualizerSetPhaseMode(JamesDSPLib *jdsp, int linearPhase);
 extern void ArbitraryResponseEqualizerStringParser(JamesDSPLib *jdsp, char *stringEq);
 extern void ArbitraryResponseEqualizerEnable(JamesDSPLib *jdsp, char enable);
 extern void ArbitraryResponseEqualizerDisable(JamesDSPLib *jdsp);

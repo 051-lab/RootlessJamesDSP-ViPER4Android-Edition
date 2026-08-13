@@ -351,6 +351,18 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
     private fun applyV4aVisibility() {
         if (!isAdded) return
         val on = V4aMode.isOn(requireContext())
+        // Classic layout drops the "ViPER4Android effects" divider heading and
+        // the gap it occupied - the original had one uninterrupted list.
+        if (me.timschneeberger.rootlessjamesdsp.utils.V4aIconColors.isClassicLayout(requireContext())) {
+            binding.v4aSectionHeader.isVisible = false
+            hideDeviceProfileCard()
+            padForFooter()
+        }
+        // The original V4A had one fixed list: no search, no reordering, no
+        // groups. Hide that whole toolbar while the mode is on.
+        binding.searchCard.isVisible = !on
+        // V4A had a single fixed list, so user-made group headings go too
+        layoutManager?.setHeadersVisible(!on)
         V4aMode.hiddenCardIds.forEach { id ->
             val container = binding.root.findViewById<View>(id)?.parent as? View
             if (on) container?.isVisible = false
@@ -358,6 +370,35 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
                 container.isVisible = true
         }
         if (on) deferredCards.removeAll { it.viewId in V4aMode.hiddenCardIds }
+    }
+
+    /**
+     * Classic layout shows the device profile in the activity's footer, so the
+     * copy in the scrolling list is removed to avoid two live instances.
+     */
+    /**
+     * Keeps the end of the list clear of the persistent footer. Applied to the
+     * scrolling parent with clipToPadding off, so newly added groups and cards
+     * dragged to the bottom stay reachable instead of hiding underneath it.
+     */
+    private fun padForFooter() {
+        val footer = activity?.findViewById<View>(R.id.classic_footer) ?: return
+        val scroll = binding.root.parent as? ViewGroup ?: return
+        footer.post {
+            val h = footer.height.takeIf { it > 0 } ?: return@post
+            scroll.clipToPadding = false
+            scroll.setPadding(scroll.paddingLeft, scroll.paddingTop,
+                scroll.paddingRight, h)
+        }
+    }
+
+    private fun hideDeviceProfileCard() {
+        if (!isAdded) return
+        val container = binding.root.findViewById<View>(R.id.card_device_profiles) ?: return
+        (container.parent as? View)?.isVisible = false
+        childFragmentManager.findFragmentById(R.id.card_device_profiles)?.let {
+            childFragmentManager.beginTransaction().remove(it).commitAllowingStateLoss()
+        }
     }
 
     fun applyLiveprogSlotVisibility(rebuild: Boolean = false) {
