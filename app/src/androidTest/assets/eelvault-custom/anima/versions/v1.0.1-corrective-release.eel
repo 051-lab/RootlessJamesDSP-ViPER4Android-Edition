@@ -1,0 +1,375 @@
+desc: ANIMA - Vintage Harmonic Engine
+
+@init
+// ============================================================
+// FIXED DEFINITIVE PARAMETERS
+// ============================================================
+
+DB_TO_LIN = 0.11512925464970228;
+
+hpHz = 30;
+shelfHz = 120;
+shelfDb = 1.5;
+
+driveDb = 4.0;
+warmth = 0.12;
+
+tapeLpHz = 14000;
+tapeAmt = 0.45;
+
+tiltHz = 1000;
+tiltDepth = 0.06;
+
+baseDelayMs = 2.0;
+flutterMs = 0.35;
+
+sideDb = 0.7;
+outDb = -0.6;
+ceilDb = -0.3;
+
+// ============================================================
+// AUTO MAKEUP GAIN PARAMETERS
+// ============================================================
+
+autoBaseDb = 2.4;
+autoMakeupDepth = 0.30;
+autoMakeupMaxDb = 3.0;
+autoAttSec = 0.050;
+autoRelSec = 0.400;
+
+// ============================================================
+// PROGRAM-DEPENDENT RELEASE PARAMETERS
+// (Not strict hysteresis. Program-memory-driven release.)
+// ============================================================
+
+relFastSec = 0.150;
+relSlowSec = 0.600;
+histTimeSec = 0.200;
+
+// ============================================================
+// TRANSITION-AWARE PEAK ESTIMATOR PARAMETER
+// (Heuristic, not standards-grade true-peak reconstruction)
+// ============================================================
+
+ispCoeff = 0.25;
+
+// ============================================================
+// DENORMAL PROTECTION
+// ============================================================
+
+denormalGuard = pow(10, -20);
+denormalSign = 1.0;
+
+// ============================================================
+// v1.0.1 ADD: DC BLOCKER CUTOFF (separate from musical HPF)
+// ============================================================
+
+dcBlockHz = 5;
+
+// ============================================================
+// COEFFICIENTS
+// ============================================================
+
+hpCoeff = 1 - exp(-2 * $pi * hpHz / srate);
+shelfCoeff = 1 - exp(-2 * $pi * shelfHz / srate);
+tapeLpCoeff = 1 - exp(-2 * $pi * tapeLpHz / srate);
+tiltCoeff = 1 - exp(-2 * $pi * tiltHz / srate);
+
+// v1.0.1 ADD: Separate DC blocker coefficient at 5 Hz
+dcCoeff = 1 - exp(-2 * $pi * dcBlockHz / srate);
+
+driveLin = exp(driveDb * DB_TO_LIN);
+shelfGain = exp(shelfDb * DB_TO_LIN) - 1;
+sideGain = exp(sideDb * DB_TO_LIN);
+outGain = exp(outDb * DB_TO_LIN);
+ceilLin = exp(ceilDb * DB_TO_LIN);
+
+autoBaseLin = exp(autoBaseDb * DB_TO_LIN);
+autoMakeupMaxLin = exp(autoMakeupMaxDb * DB_TO_LIN);
+autoAttCoeff = 1 - exp(-1 / (autoAttSec * srate));
+autoRelCoeff = 1 - exp(-1 / (autoRelSec * srate));
+
+relFast = exp(-1 / (relFastSec * srate));
+relSlow = exp(-1 / (relSlowSec * srate));
+histCoeff = 1 - exp(-1 / (histTimeSec * srate));
+
+limRel = exp(-1 / (0.080 * srate));
+
+// ============================================================
+// DELAY MEMORY
+// ============================================================
+
+DELAY_SIZE = 4096;
+DELAY_MASK = DELAY_SIZE - 1;
+
+dL = 0;
+dR = DELAY_SIZE;
+
+i = 0;
+loop(DELAY_SIZE * 2,
+    dL[i] = 0;
+    i += 1;
+);
+
+wpos = 0;
+
+baseDelay = baseDelayMs * 0.001 * srate;
+flutterDepth = flutterMs * 0.001 * srate;
+
+baseDelay = min(baseDelay, 1600);
+flutterDepth = min(flutterDepth, 160);
+
+// v1.0.1 FIX: LFO initialization
+// lfo2 initialized to 0. The phase offset is applied in the sine argument.
+lfo1 = 0;
+lfo2 = 0;
+
+// ============================================================
+// v1.0.1 FIX: Precompute LFO increments
+// The frequency multiplication (1.7x) is now in the increment,
+// not applied after phase wrapping.
+// ============================================================
+
+lfo1Inc = 2 * $pi * 0.15 / srate;
+lfo2Inc = 2 * $pi * (0.23 * 1.7) / srate;
+
+// ============================================================
+// STATE VARIABLES
+// ============================================================
+
+hpL = 0; hpR = 0;
+shelfL = 0; shelfR = 0;
+tapeL = 0; tapeR = 0;
+tiltL = 0; tiltR = 0;
+dcL = 0; dcR = 0;
+env = 0;
+history = 0;
+limGain = 1;
+autoGain = autoBaseLin;
+prevL = 0;
+prevR = 0;
+0;
+0;
+
+@sample
+// ============================================================
+// DENORMAL PROTECTION
+// ============================================================
+
+denormalSign = -denormalSign;
+inL = spl0 + denormalGuard * denormalSign;
+inR = spl1 + denormalGuard * denormalSign;
+
+// ============================================================
+// v1.0.1 ADD: Non-finite input protection
+// NaN != NaN, so this catches NaN. Infinity is caught by the
+// abs() comparison against a very large finite number.
+// ============================================================
+
+inL == inL ? 0 : ( inL = 0 );
+inR == inR ? 0 : ( inR = 0 );
+abs(inL) > 100 ? ( inL = 0 );
+abs(inR) > 100 ? ( inR = 0 );
+
+// ============================================================
+// STAGE 1: 30 Hz MUSICAL HIGH-PASS
+// (Subsonic protection, not DC removal)
+// ============================================================
+
+hpL += hpCoeff * (inL - hpL);
+xL = inL - hpL;
+hpR += hpCoeff * (inR - hpR);
+xR = inR - hpR;
+
+// ============================================================
+// STAGE 2: TRANSFORMER WEIGHT (120 Hz low shelf, +1.5 dB)
+// ============================================================
+
+shelfL += shelfCoeff * (xL - shelfL);
+xL += shelfGain * shelfL;
+shelfR += shelfCoeff * (xR - shelfR);
+xR += shelfGain * shelfR;
+
+// ============================================================
+// STAGE 3: ASYMMETRIC MIXED-HARMONIC SATURATION
+// (Rational soft-clip with second-harmonic bias.
+//  Third harmonic is dominant. This is intentional.)
+// ============================================================
+
+preL = xL * driveLin;
+preR = xR * driveLin;
+
+oddL = preL / (1 + abs(preL));
+oddR = preR / (1 + abs(preR));
+
+evenL = oddL * oddL * 2;
+evenR = oddR * oddR * 2;
+
+satL = (oddL + warmth * (evenL - oddL)) / driveLin;
+satR = (oddR + warmth * (evenR - oddR)) / driveLin;
+
+// ============================================================
+// STAGE 4: TAPE DAMPING (14 kHz one-pole low-pass)
+// ============================================================
+
+tapeL += tapeLpCoeff * (satL - tapeL);
+tapeR += tapeLpCoeff * (satR - tapeR);
+satL = tapeL;
+satR = tapeR;
+
+// ============================================================
+// STAGE 5: TAPE COMPRESSION WITH PROGRAM-DEPENDENT RELEASE
+// ============================================================
+
+peak = max(abs(satL), abs(satR));
+
+history = history * (1 - histCoeff) + peak * histCoeff;
+histClamp = min(max(history, 0), 1.0);
+
+dynamicRel = relFast * (1 - histClamp) + relSlow * histClamp;
+
+env = peak > env ? peak : env * dynamicRel;
+
+tapeGain = 1 / (1 + tapeAmt * env);
+satL *= tapeGain;
+satR *= tapeGain;
+
+// ============================================================
+// STAGE 5.5: AUTO MAKEUP GAIN TARGET
+// ============================================================
+
+// v1.0.1 FIX: Removed redundant division.
+// Since tapeGain = 1 / (1 + tapeAmt * env),
+// the inverse is exactly (1 + tapeAmt * env).
+invTapeGain = 1 + tapeAmt * env;
+
+autoTarget = autoBaseLin * (1 + (invTapeGain - 1) * autoMakeupDepth);
+autoTarget = min(autoTarget, autoMakeupMaxLin);
+
+autoCoeff = autoTarget > autoGain ? autoAttCoeff : autoRelCoeff;
+autoGain += autoCoeff * (autoTarget - autoGain);
+autoGain = min(max(autoGain, autoBaseLin), autoMakeupMaxLin);
+
+// ============================================================
+// STAGE 6: DYNAMIC TILT EQ (1 kHz pivot, Fletcher-Munson)
+// ============================================================
+
+tiltL += tiltCoeff * (satL - tiltL);
+lowL = tiltL;
+highL = satL - lowL;
+tiltR += tiltCoeff * (satR - tiltR);
+lowR = tiltR;
+highR = satR - lowR;
+
+tiltAmt = tiltDepth * env;
+satL = lowL * (1 + tiltAmt) + highL * (1 - 0.75 * tiltAmt);
+satR = lowR * (1 + tiltAmt) + highR * (1 - 0.75 * tiltAmt);
+
+// ============================================================
+// STAGE 7: DC REMOVAL
+// v1.0.1 FIX: Now uses dedicated 5 Hz coefficient (dcCoeff)
+// instead of reusing the 30 Hz musical HPF coefficient.
+// This eliminates the double 30 Hz high-pass problem.
+// ============================================================
+
+dcL += dcCoeff * (satL - dcL);
+satL -= dcL;
+dcR += dcCoeff * (satR - dcR);
+satR -= dcR;
+
+// ============================================================
+// STAGE 8: MICRO-FLUTTER
+// v1.0.1 FIX: LFO2 frequency multiplication is now in the
+// increment, not applied after phase wrapping. This eliminates
+// the discontinuity that occurred every ~4.3 seconds.
+// ============================================================
+
+lfo1 += lfo1Inc;
+lfo1 >= 2 * $pi ? ( lfo1 -= 2 * $pi );
+lfo2 += lfo2Inc;
+lfo2 >= 2 * $pi ? ( lfo2 -= 2 * $pi );
+
+mod = flutterDepth * (0.65 * sin(lfo1) + 0.35 * sin(lfo2 + 1.3));
+del = baseDelay + mod;
+del = max(4, min(DELAY_MASK - 3, del));
+
+dL[wpos] = satL;
+dR[wpos] = satR;
+
+rp = wpos - del;
+rp < 0 ? ( rp += DELAY_SIZE );
+
+// ============================================================
+// STAGE 8.5: 4-POINT HERMITE CUBIC INTERPOLATION
+// ============================================================
+
+i0 = rp | 0;
+frac = rp - i0;
+
+im1 = (i0 + DELAY_MASK) & DELAY_MASK;
+i1 = (i0 + 1) & DELAY_MASK;
+i2 = (i0 + 2) & DELAY_MASK;
+
+y0 = dL[im1]; y1 = dL[i0]; y2 = dL[i1]; y3 = dL[i2];
+c0 = y1;
+c1 = 0.5 * (y2 - y0);
+c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+wetL = c0 + frac * (c1 + frac * (c2 + frac * c3));
+
+y0 = dR[im1]; y1 = dR[i0]; y2 = dR[i1]; y3 = dR[i2];
+c0 = y1;
+c1 = 0.5 * (y2 - y0);
+c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+wetR = c0 + frac * (c1 + frac * (c2 + frac * c3));
+
+wpos = (wpos + 1) & DELAY_MASK;
+
+// ============================================================
+// STAGE 9: MID/SIDE WIDTH LIFT (+0.7 dB side gain)
+// ============================================================
+
+mid = (wetL + wetR) * 0.5;
+side = (wetL - wetR) * 0.5 * sideGain;
+outL = mid + side;
+outR = mid - side;
+
+// ============================================================
+// STAGE 9.5: AUTO MAKEUP GAIN APPLICATION
+// ============================================================
+
+outL *= autoGain;
+outR *= autoGain;
+
+// ============================================================
+// STAGE 10: OUTPUT TRIM (-0.6 dB)
+// ============================================================
+
+outL *= outGain;
+outR *= outGain;
+
+// ============================================================
+// STAGE 10.5: TRANSITION-AWARE SAFETY LIMITER
+// (Heuristic peak estimator, not standards-grade true-peak.
+//  Final hard clamp guarantees sample-level ceiling.)
+// ============================================================
+
+ispL = abs(outL) + ispCoeff * abs(outL - prevL);
+ispR = abs(outR) + ispCoeff * abs(outR - prevR);
+prevL = outL;
+prevR = outR;
+
+pk = max(ispL, ispR);
+
+limTarget = pk > ceilLin ? ceilLin / pk : 1.0;
+limGain = limTarget < limGain ? limTarget : limGain * limRel + limTarget * (1 - limRel);
+
+outL *= limGain;
+outR *= limGain;
+
+outL = max(min(outL, ceilLin), -ceilLin);
+outR = max(min(outR, ceilLin), -ceilLin);
+
+spl0 = outL;
+spl1 = outR;

@@ -119,6 +119,10 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
                 R.id.card_vdynbass, PreferenceGroupFragment.newInstance(Constants.PREF_VDYNBASS,
                     R.xml.dsp_vdynbass_preferences
                 ))
+            .replace(
+                R.id.card_liveprog, PreferenceGroupFragment.newInstance(Constants.PREF_LIVEPROG,
+                    R.xml.dsp_liveprog_preferences
+                ))
             .commitAllowingStateLoss()
 
         // The remaining cards are installed only once they're about to scroll
@@ -282,7 +286,6 @@ class DspFragment : Fragment(), SharedPreferences.OnSharedPreferenceChangeListen
         CardSpec(R.id.card_peq, Constants.PREF_PEQ, R.xml.dsp_parametriceq_preferences),
         CardSpec(R.id.card_ddc, Constants.PREF_DDC, R.xml.dsp_ddc_preferences),
         CardSpec(R.id.card_convolver, Constants.PREF_CONVOLVER, R.xml.dsp_convolver_preferences),
-        CardSpec(R.id.card_liveprog, Constants.PREF_LIVEPROG, R.xml.dsp_liveprog_preferences),
         CardSpec(R.id.card_tube, Constants.PREF_TUBE, R.xml.dsp_tube_preferences),
         CardSpec(R.id.card_spectrumext, Constants.PREF_SPECTRUMEXT, R.xml.dsp_spectrumext_preferences),
         CardSpec(R.id.card_stereowide, Constants.PREF_STEREOWIDE, R.xml.dsp_stereowide_preferences),

@@ -1,0 +1,20 @@
+@init
+gain = 0.5;
+init_count = 1;
+slider_count = 0;
+block_count = 0;
+sample_count = 0;
+seen_block_size = 0;
+
+@slider
+slider_count += 1;
+derived_gain = gain;
+
+@block
+block_count += 1;
+seen_block_size = samplesblock;
+
+@sample
+sample_count += 1;
+spl0 *= derived_gain;
+spl1 *= derived_gain;
