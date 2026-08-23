@@ -117,6 +117,7 @@ class SwitchPreferenceGroup(context: Context, attrs: AttributeSet) : PreferenceG
     }
 
     private fun setChildrenVisibility(visible: Boolean) {
+        childrenVisible = visible
         children.forEach {
             it.isVisible = visible && (childVisibilityFilter?.invoke(it) != false)
         }
