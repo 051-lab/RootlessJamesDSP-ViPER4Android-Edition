@@ -1,5 +1,26 @@
 import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
 
+private val releaseStoreFile = providers.gradleProperty("releaseStoreFile")
+    .orElse(providers.environmentVariable("RELEASE_KEYSTORE_PATH"))
+    .orNull
+private val releaseStorePassword = providers.gradleProperty("releaseStorePassword")
+    .orElse(providers.environmentVariable("RELEASE_KEYSTORE_PASSWORD"))
+    .orNull
+private val releaseKeyAlias = providers.gradleProperty("releaseKeyAlias")
+    .orElse(providers.environmentVariable("RELEASE_KEY_ALIAS"))
+    .orNull
+private val releaseKeyPassword = providers.gradleProperty("releaseKeyPassword")
+    .orElse(providers.environmentVariable("RELEASE_KEY_PASSWORD"))
+    .orNull
+private val releaseSigningConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+private val allowUnsignedRelease = providers.gradleProperty("allowUnsignedRelease")
+    .orNull == "true"
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -52,6 +73,17 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+
+        // Release artifacts must be signed with a private key supplied by the
+        // release environment. Never fall back to the tracked debug keystore.
+        create("release") {
+            if (releaseSigningConfigured) {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -71,7 +103,7 @@ android {
             //proguardFiles("proguard-android-optimize.txt", "proguard-rules.pro")
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
         create("preview") {
             initWith(getByName("release"))
@@ -123,6 +155,8 @@ android {
         create("plugin") {
             dimension = "version"
 
+            // Keep plugin artifacts distinct from rootless/root applications.
+            applicationId = "me.timschneeberger.rootlessjamesdsp.plugin"
             AndroidConfig.minSdk = 26
             minSdk = AndroidConfig.minSdk
             buildConfigField("boolean", "ROOTLESS", "false")
@@ -175,6 +209,30 @@ android {
         }
     }
     namespace = "me.timschneeberger.rootlessjamesdsp"
+}
+
+if (!releaseSigningConfigured && !allowUnsignedRelease) {
+    tasks.configureEach {
+        if (name.matches(Regex("(?i)(assemble|bundle).*(release|preview)$"))) {
+            doFirst {
+                throw GradleException(
+                    "Release/preview signing is not configured. Provide " +
+                        "releaseStoreFile, releaseStorePassword, releaseKeyAlias, and " +
+                        "releaseKeyPassword (or their RELEASE_* environment variables)."
+                )
+            }
+        }
+    }
+}
+
+// Root/plugin package IDs are intentionally distinct, but they do not have
+// Firebase clients in the tracked configuration. F-Droid builds must not fail
+// while trying to generate unused Google Services resources for those variants.
+tasks.configureEach {
+    if (name.endsWith("GoogleServices") &&
+        (name.startsWith("processRoot") || name.startsWith("processPlugin"))) {
+        enabled = false
+    }
 }
 
 // Hooks to upload native symbols to crashlytics automatically
