@@ -15,8 +15,9 @@ import androidx.core.content.getSystemService
 import androidx.lifecycle.Observer
 import androidx.lifecycle.asLiveData
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.timschneeberger.rootlessjamesdsp.BuildConfig
@@ -66,6 +67,7 @@ class RootAudioProcessorService : BaseAudioProcessorService(), KoinComponent,
 
     // Room databases
     private val applicationScope = CoroutineScope(SupervisorJob())
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val blockedAppDatabase by lazy { AppBlocklistDatabase.getDatabase(this, applicationScope) }
     private val blockedAppRepository by lazy { AppBlocklistRepository(blockedAppDatabase.appBlocklistDao()) }
     private val blockedApps by lazy { blockedAppRepository.blocklist.asLiveData() }
@@ -165,7 +167,7 @@ class RootAudioProcessorService : BaseAudioProcessorService(), KoinComponent,
             AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION -> {
                 if(!app.isEnhancedProcessing) {
                     val sessionId = intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, -1)
-                    MainScope().launch {
+                    serviceScope.launch {
                         if (sessionId != 0)
                             delay(800)
                         app.rootSessionDatabase.removeSessionByIntent(intent)
@@ -181,25 +183,29 @@ class RootAudioProcessorService : BaseAudioProcessorService(), KoinComponent,
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         isServiceDisposing = true
+        serviceScope.cancel()
 
         // Stop foreground service
         stopForeground(STOP_FOREGROUND_REMOVE)
 
-        // Unregister database observer
+        // Unregister database observer and audio callbacks before clearing sessions.
         blockedApps.removeObserver(blockedAppObserver)
         audioManager.unregisterAudioPlaybackCallback(audioPlaybackCallback)
+
+        sessionDumpManager?.destroy()
+        sessionDumpManager = null
+        app.rootSessionDatabase.clearSessions()
 
         // Notify app about service termination and unregister
         sendLocalBroadcast(Intent(Constants.ACTION_SERVICE_STOPPED))
 
-        app.rootSessionDatabase.clearSessions()
-
         preferences.unregisterOnSharedPreferenceChangeListener(this)
         app.rootSessionDatabase.unregisterOnSessionChangeListener(this)
+        applicationScope.cancel()
 
         notificationManager.cancel(Notifications.ID_SERVICE_STATUS)
+        super.onDestroy()
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
@@ -225,6 +231,8 @@ class RootAudioProcessorService : BaseAudioProcessorService(), KoinComponent,
     }
 
     private fun setupEnhancedProcessing() {
+        sessionDumpManager?.destroy()
+        sessionDumpManager = null
         app.rootSessionDatabase.clearSessions()
 
         sessionDumpManager = RootSessionDumpManager(this)

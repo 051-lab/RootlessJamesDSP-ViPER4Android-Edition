@@ -77,7 +77,12 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
 
     // Processing
     private var recreateRecorderRequested = false
+    @Volatile
     private var recorderThread: Thread? = null
+    @Volatile
+    private var activeRecorder: AudioRecord? = null
+    @Volatile
+    private var activeTrack: AudioTrack? = null
     private lateinit var engine: JamesDspLocalEngine
     private val isRunning: Boolean
         get() = recorderThread != null
@@ -474,6 +479,9 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
             return
         }
 
+        activeRecorder = recorder
+        activeTrack = track
+
         if(engine.sampleRate.toInt() != sampleRate) {
             Timber.d("Sampling rate changed to ${sampleRate}Hz")
             engine.sampleRate = sampleRate.toFloat()
@@ -520,6 +528,7 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
 
                         // Recreate recorder with new AudioPlaybackRecordingConfiguration
                         recorder = buildAudioRecord(encodingFormat, sampleRate, bufferSizeBytes)
+                        activeRecorder = recorder
                         Timber.d("Recorder recreated")
                     }
 
@@ -599,19 +608,45 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
 
                 recorder.release()
                 track.release()
+                activeRecorder = null
+                activeTrack = null
             }
         }
         recorderThread!!.start()
     }
 
+    private fun releaseAudioResources() {
+        activeRecorder?.let { recorder ->
+            try { recorder.stop() } catch (_: IllegalStateException) { }
+            try { recorder.release() } catch (ex: Exception) { Timber.w(ex, "Failed to release AudioRecord") }
+        }
+        activeRecorder = null
+
+        activeTrack?.let { track ->
+            try { track.stop() } catch (_: IllegalStateException) { }
+            try { track.release() } catch (ex: Exception) { Timber.w(ex, "Failed to release AudioTrack") }
+        }
+        activeTrack = null
+    }
+
     // Terminate recording thread
     fun stopRecording() {
-        if (recorderThread != null) {
-            isProcessorDisposing = true
-            recorderThread!!.interrupt()
-            recorderThread!!.join(500)
-            recorderThread = null
+        isProcessorDisposing = true
+        val thread = recorderThread ?: return
+
+        // Releasing the blocking I/O objects is required to wake read/write. Do
+        // this before joining; interrupt alone does not reliably unblock them.
+        releaseAudioResources()
+        thread.interrupt()
+        try {
+            thread.join()
         }
+        catch (ex: InterruptedException) {
+            Thread.currentThread().interrupt()
+            Timber.e(ex, "Interrupted while waiting for recorder thread")
+            return
+        }
+        recorderThread = null
     }
 
     // Hard restart recording thread
