@@ -215,6 +215,7 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
 
             cache.select(Constants.PREF_GEQ)
             val geqEnabled = cache.get(R.string.key_geq_enable, false)
+            val geqLinearPhase = cache.get(R.string.key_geq_linear_phase, false)
             val geqBands = cache.get(R.string.key_geq_nodes, Constants.DEFAULT_GEQ_INTERNAL)
 
             cache.select(Constants.PREF_PEQ)
@@ -297,8 +298,16 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
                     )
                     Constants.PREF_SPECTRUMEXT -> setSpectrumExtension(spxEnabled, spxBark, spxStrength)
                     Constants.PREF_EQ -> setMultiEqualizer(eqEnabled, eqFilterType, eqInterpolationMode, eqBands)
-                    Constants.PREF_GEQ -> setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
-                    Constants.PREF_PEQ -> setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
+                    Constants.PREF_GEQ -> {
+                        // Phase mode first: it rebuilds the coefficient
+                        // generator, so the nodes must be re-sent after it.
+                        setEqPhaseMode(geqLinearPhase)
+                        setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
+                    }
+                    Constants.PREF_PEQ -> {
+                        setEqPhaseMode(geqLinearPhase)
+                        setGraphicEqCombined(geqEnabled, geqBands, peqEnabled, peqBandsStr, peqPreamp)
+                    }
                     Constants.PREF_REVERB -> setReverb(reverbEnabled, reverbPreset)
                     Constants.PREF_STEREOWIDE -> setStereoEnhancement(swEnabled, swMode)
                     Constants.PREF_CROSSFEED -> setCrossfeed(crossfeedEnabled, crossfeedMode)
@@ -599,6 +608,7 @@ abstract class JamesDspBaseEngine(val context: Context, val callbacks: JamesDspW
         }
 
     // Effect config
+    abstract fun setEqPhaseMode(linearPhase: Boolean): Boolean
     abstract fun setOutputControl(threshold: Float, release: Float, postGain: Float, limiterMode: Int = 0): Boolean
     abstract fun setBassExciter(enable: Boolean, cutoff: Float, intensity: Float, mix: Float, band2: Boolean, cutoff2: Float, intensity2: Float, mix2: Float): Boolean
     abstract fun setVDynBass(enable: Boolean, gain: Float, x1: Float, x2: Float, y1: Float, y2: Float, sgx: Float, sgy: Float): Boolean

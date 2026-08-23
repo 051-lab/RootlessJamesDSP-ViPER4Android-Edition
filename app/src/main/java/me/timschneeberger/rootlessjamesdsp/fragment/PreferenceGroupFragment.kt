@@ -360,6 +360,10 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
                     startActivity(intent)
                     true
                 }
+                // Phase mode belongs to the combined FIR filter. It appears on
+                // both EQ cards, which live in different namespaces, so mirror
+                // the value to keep them showing one truth.
+                mirrorEqPhaseMode()
             }
             R.xml.dsp_parametriceq_preferences -> {
                 findPreference<Preference>(getString(R.string.key_peq_bands))?.setOnPreferenceClickListener {
@@ -367,6 +371,7 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
                     startActivity(intent)
                     true
                 }
+                mirrorEqPhaseMode()
             }
         }
 
@@ -374,6 +379,20 @@ class PreferenceGroupFragment : PreferenceFragmentCompat(), KoinComponent {
 
         preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(listener)
         prefsApp.registerOnSharedPreferenceChangeListener(listenerApp)
+    }
+
+    private fun mirrorEqPhaseMode() {
+        val pref = findPreference<androidx.preference.TwoStatePreference>(
+            getString(R.string.key_geq_linear_phase)) ?: return
+        val args = requireArguments()
+        val other = if (args.getInt(BUNDLE_XML_RES) == R.xml.dsp_graphiceq_preferences)
+            Constants.PREF_PEQ else Constants.PREF_GEQ
+        pref.setOnPreferenceChangeListener { _, v ->
+            requireContext().getSharedPreferences(other, Context.MODE_MULTI_PROCESS)
+                .edit().putBoolean(getString(R.string.key_geq_linear_phase), v as Boolean)
+                .apply()
+            true
+        }
     }
 
     private fun setupConvolverSampleRateFiles() {
