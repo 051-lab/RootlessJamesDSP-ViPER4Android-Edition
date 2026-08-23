@@ -6,8 +6,6 @@ import me.timschneeberger.rootlessjamesdsp.interop.structure.EelVmVariable
 import me.timschneeberger.rootlessjamesdsp.utils.Constants
 import me.timschneeberger.rootlessjamesdsp.utils.extensions.ContextExtensions.sendLocalBroadcast
 import timber.log.Timber
-import java.util.Timer
-import kotlin.concurrent.schedule
 
 class JamesDspLocalEngine(context: Context, callbacks: JamesDspWrapper.JamesDspCallbacks? = null) : JamesDspBaseEngine(context, callbacks) {
     var handle: JamesDspHandle = JamesDspWrapper.alloc(callbacks ?: DummyCallbacks())
@@ -29,9 +27,7 @@ class JamesDspLocalEngine(context: Context, callbacks: JamesDspWrapper.JamesDspC
     override fun close() {
         val oldHandle = handle
         handle = 0
-
-        // Make sure ongoing async calls to native have enough time to finish
-        Timer().schedule(100) {
+        if (oldHandle != 0L) {
             JamesDspWrapper.free(oldHandle)
             Timber.d("Handle $oldHandle has been freed")
         }
