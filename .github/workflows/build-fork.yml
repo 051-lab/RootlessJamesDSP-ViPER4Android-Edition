@@ -13,10 +13,12 @@ jobs:
         with:
           java-version: 17
           distribution: adopt
-      - name: Build rootless release APK (FOSS, optimized)
-        run: ./gradlew assembleRootlessFdroidRelease --no-daemon
+      - name: Run JVM tests
+        run: ./gradlew testRootlessFdroidDebugUnitTest --no-daemon
+      - name: Build rootless preview APK (FOSS, debug-signed)
+        run: ./gradlew assembleRootlessFdroidDebug --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: RootlessViPER4Android-release
-          path: app/build/outputs/apk/rootlessFdroid/release/*.apk
+          name: RootlessViPER4Android-preview
+          path: app/build/outputs/apk/rootlessFdroid/debug/*.apk
