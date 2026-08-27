@@ -109,7 +109,7 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
     private var excludeRestrictedSessions = false
 
     // Termination flags
-    private var isProcessorDisposing = false
+    @Volatile private var isProcessorDisposing = false
     private var isServiceDisposing = false
 
     // Shared preferences
@@ -438,7 +438,13 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
 
     // Start recording thread
     @SuppressLint("BinaryOperationInTimber")
+    @Synchronized
     private fun startRecording() {
+        // Re-entry guard: a hard reboot (restartRecording) or in-flight
+        // teardown must not start a second recorder thread.
+        if (isServiceDisposing || recorderThread?.isAlive == true)
+            return
+
         // Sanity check
         if (!hasRecordPermission()) {
             Timber.e("Record audio permission missing. Can't record")
@@ -515,9 +521,9 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
                         Timber.d("Recreating recorder without stopping thread...")
 
                         // Suspend track, release recorder
-                        recorder.stop()
-                        track.stop()
-                        recorder.release()
+                        runCatching { recorder.stop() }
+                        runCatching { track.stop() }
+                        runCatching { recorder.release() }
 
 
                         if (mediaProjection == null) {
@@ -598,48 +604,47 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
                 Timber.e(e)
                 stopSelf()
             } finally {
-                // Clean up recorder and track
-                if(recorder.state != AudioRecord.STATE_UNINITIALIZED) {
-                    recorder.stop()
-                }
-                if(track.state != AudioTrack.STATE_UNINITIALIZED) {
-                    track.stop()
-                }
-
-                recorder.release()
-                track.release()
+                // Clean up recorder and track. stopRecording() may have already
+                // stopped the active I/O to unblock the read/write, so every
+                // call here is guarded against an already-stopped resource.
                 activeRecorder = null
                 activeTrack = null
+                runCatching {
+                    if(recorder.state == AudioRecord.STATE_INITIALIZED &&
+                        recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
+                }
+                runCatching {
+                    if(track.state == AudioTrack.STATE_INITIALIZED &&
+                        track.playState != AudioTrack.PLAYSTATE_STOPPED) track.stop()
+                }
+                runCatching { recorder.release() }
+                runCatching { track.release() }
+                if (recorderThread === Thread.currentThread())
+                    recorderThread = null
             }
         }
         recorderThread!!.start()
     }
 
-    private fun releaseAudioResources() {
-        activeRecorder?.let { recorder ->
-            try { recorder.stop() } catch (_: IllegalStateException) { }
-            try { recorder.release() } catch (ex: Exception) { Timber.w(ex, "Failed to release AudioRecord") }
-        }
-        activeRecorder = null
-
-        activeTrack?.let { track ->
-            try { track.stop() } catch (_: IllegalStateException) { }
-            try { track.release() } catch (ex: Exception) { Timber.w(ex, "Failed to release AudioTrack") }
-        }
-        activeTrack = null
-    }
-
     // Terminate recording thread
+    @Synchronized
     fun stopRecording() {
-        isProcessorDisposing = true
         val thread = recorderThread ?: return
+        isProcessorDisposing = true
 
-        // Releasing the blocking I/O objects is required to wake read/write. Do
-        // this before joining; interrupt alone does not reliably unblock them.
-        releaseAudioResources()
+        // Stop the active I/O to unblock the blocking read/write before joining;
+        // interrupt alone does not reliably unblock them. Release is left to the
+        // recorder thread's own finally block, so a stop()/release() from this
+        // thread can never race the thread's cleanup of the same objects.
+        runCatching {
+            activeRecorder?.takeIf { it.recordingState == AudioRecord.RECORDSTATE_RECORDING }?.stop()
+        }
+        runCatching {
+            activeTrack?.takeIf { it.playState != AudioTrack.PLAYSTATE_STOPPED }?.stop()
+        }
         thread.interrupt()
         try {
-            thread.join()
+            thread.join(RECORDING_THREAD_SHUTDOWN_TIMEOUT_MS)
         }
         catch (ex: InterruptedException) {
             Thread.currentThread().interrupt()
@@ -650,6 +655,7 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
     }
 
     // Hard restart recording thread
+    @Synchronized
     fun restartRecording() {
         if(isProcessorDisposing || isServiceDisposing) {
             Timber.e("restartRecording: service or processor already disposing")
@@ -759,6 +765,7 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
 
     companion object {
         const val SESSION_LOSS_MAX_RETRIES = 1
+        const val RECORDING_THREAD_SHUTDOWN_TIMEOUT_MS = 5_000L
 
         const val ACTION_START = BuildConfig.APPLICATION_ID + ".rootless.service.START"
         const val ACTION_STOP = BuildConfig.APPLICATION_ID + ".rootless.service.STOP"
