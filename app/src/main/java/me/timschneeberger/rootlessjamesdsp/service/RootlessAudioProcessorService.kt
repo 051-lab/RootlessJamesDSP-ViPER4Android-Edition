@@ -94,7 +94,7 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
     private var notificationSessions: Array<IEffectSession> = emptyArray()
 
     // Idle detection
-    private var isProcessorIdle = false
+    @Volatile private var isProcessorIdle = false
     /** Seconds of continuous digital silence seen by the capture thread. */
     private var silenceGateSecs = 0.0
 
@@ -103,14 +103,14 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
         silenceGateSecs = if (silentBuffer) silenceGateSecs + bufferSecs else 0.0
         return silenceGateSecs >= 20.0
     }
-    private var suspendOnIdle = false
+    @Volatile private var suspendOnIdle = false
 
     // Exclude restricted apps flag
     private var excludeRestrictedSessions = false
 
     // Termination flags
     @Volatile private var isProcessorDisposing = false
-    private var isServiceDisposing = false
+    @Volatile private var isServiceDisposing = false
 
     // Shared preferences
     private val preferences: Preferences.App by inject()
@@ -521,11 +521,13 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
                         Timber.d("Recreating recorder without stopping thread...")
 
                         // Suspend track, release recorder
+                        activeRecorder = null
                         runCatching { recorder.stop() }
                         runCatching { track.stop() }
                         runCatching { recorder.release() }
 
-
+                        if (isProcessorDisposing)
+                            break
                         if (mediaProjection == null) {
                             Timber.e("Media projection handle is null, stopping service")
                             stopSelf()
@@ -567,8 +569,19 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
                     }
 
                     // Choose encoding and process data
-                    if(encoding == AudioEncoding.PcmShort) {
+                    val readCount = if(encoding == AudioEncoding.PcmShort)
                         recorder.read(shortBuffer, 0, shortBuffer.size, AudioRecord.READ_BLOCKING)
+                    else
+                        recorder.read(floatBuffer, 0, floatBuffer.size, AudioRecord.READ_BLOCKING)
+                    if (readCount <= 0) {
+                        if (isProcessorDisposing) break
+                        throw IOException("AudioRecord.read failed: $readCount")
+                    }
+                    val sampleCount = readCount - readCount % 2
+                    if (sampleCount == 0)
+                        continue
+
+                    if(encoding == AudioEncoding.PcmShort) {
                         var silent = suspendOnIdle
                         if (silent) {
                             for (v in shortBuffer) if (v.toInt() != 0) { silent = false; break }
@@ -577,12 +590,11 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
                             if (!bufferGated) { bufferGated = true; track.stop() }
                         } else {
                             if (bufferGated) { bufferGated = false; track.play() }
-                            engine.processInt16(shortBuffer, shortOutBuffer)
-                            track.write(shortOutBuffer, 0, shortOutBuffer.size, AudioTrack.WRITE_BLOCKING)
+                            engine.processInt16(shortBuffer, shortOutBuffer, 0, sampleCount)
+                            writeFully(track, shortOutBuffer, sampleCount)
                         }
                     }
                     else {
-                        recorder.read(floatBuffer, 0, floatBuffer.size, AudioRecord.READ_BLOCKING)
                         var silent = suspendOnIdle
                         if (silent) {
                             for (v in floatBuffer) if (v > 1e-7f || v < -1e-7f) { silent = false; break }
@@ -591,14 +603,15 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
                             if (!bufferGated) { bufferGated = true; track.stop() }
                         } else {
                             if (bufferGated) { bufferGated = false; track.play() }
-                            engine.processFloat(floatBuffer, floatOutBuffer)
-                            track.write(floatOutBuffer, 0, floatOutBuffer.size, AudioTrack.WRITE_BLOCKING)
+                            engine.processFloat(floatBuffer, floatOutBuffer, 0, sampleCount)
+                            writeFully(track, floatOutBuffer, sampleCount)
                         }
                     }
                 }
             } catch (e: IOException) {
                 Timber.w(e)
-                // ignore
+                if (!isProcessorDisposing)
+                    stopSelf()
             } catch (e: Exception) {
                 Timber.e("Exception in recorderThread raised")
                 Timber.e(e)
@@ -628,8 +641,8 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
 
     // Terminate recording thread
     @Synchronized
-    fun stopRecording() {
-        val thread = recorderThread ?: return
+    fun stopRecording(): Boolean {
+        val thread = recorderThread ?: return true
         isProcessorDisposing = true
 
         // Stop the active I/O to unblock the blocking read/write before joining;
@@ -643,15 +656,44 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
             activeTrack?.takeIf { it.playState != AudioTrack.PLAYSTATE_STOPPED }?.stop()
         }
         thread.interrupt()
-        try {
-            thread.join(RECORDING_THREAD_SHUTDOWN_TIMEOUT_MS)
+
+        if (thread !== Thread.currentThread()) {
+            var interrupted = false
+            try {
+                thread.join(RECORDING_THREAD_SHUTDOWN_TIMEOUT_MS)
+            } catch (_: InterruptedException) {
+                interrupted = true
+            }
+            if (interrupted)
+                Thread.currentThread().interrupt()
         }
-        catch (ex: InterruptedException) {
-            Thread.currentThread().interrupt()
-            Timber.e(ex, "Interrupted while waiting for recorder thread")
-            return
+
+        val stopped = !thread.isAlive
+        if (!stopped)
+            Timber.e("Recorder thread did not stop within ${RECORDING_THREAD_SHUTDOWN_TIMEOUT_MS}ms")
+        else if (recorderThread === thread)
+            recorderThread = null
+        return stopped
+    }
+
+    private fun writeFully(track: AudioTrack, buffer: ShortArray, size: Int) {
+        var offset = 0
+        while (offset < size && !isProcessorDisposing) {
+            val written = track.write(buffer, offset, size - offset, AudioTrack.WRITE_BLOCKING)
+            if (written <= 0)
+                throw IOException("AudioTrack.write failed: $written")
+            offset += written
         }
-        recorderThread = null
+    }
+
+    private fun writeFully(track: AudioTrack, buffer: FloatArray, size: Int) {
+        var offset = 0
+        while (offset < size && !isProcessorDisposing) {
+            val written = track.write(buffer, offset, size - offset, AudioTrack.WRITE_BLOCKING)
+            if (written <= 0)
+                throw IOException("AudioTrack.write failed: $written")
+            offset += written
+        }
     }
 
     // Hard restart recording thread
@@ -662,7 +704,10 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
             return
         }
 
-        stopRecording()
+        if (!stopRecording()) {
+            Timber.e("restartRecording: recorder thread did not stop; skipping restart")
+            return
+        }
         isProcessorDisposing = false
         recreateRecorderRequested = false
         startRecording()
