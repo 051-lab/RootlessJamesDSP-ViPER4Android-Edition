@@ -282,9 +282,12 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
             var reloaded = false
 
             files.forEach next@ { f ->
-                val slot = liveprogSlotForEntry(f.name) ?: return@next
-                if (f.name == FILE_LIVEPROG || slot < 0 || slot >= LiveprogSlots.COUNT)
+                // Only per-slot entries (liveprog1..4) are restored here; the
+                // legacy single FILE_LIVEPROG entry is handled by the v1..v3
+                // loader branch and must not be replayed as slot 1.
+                if (f.name == FILE_LIVEPROG)
                     return@next
+                val slot = liveprogSlotForEntry(f.name) ?: return@next
 
                 val rawName = metadata["liveprog_slot_${slot + 1}_name"] ?: return@next
                 val filename = File(rawName).name
