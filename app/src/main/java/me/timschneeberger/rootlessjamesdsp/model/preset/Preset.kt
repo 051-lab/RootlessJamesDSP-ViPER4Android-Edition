@@ -106,9 +106,12 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
 
     companion object {
         /* Update constants as needed */
-        const val PRESET_VERSION = "3"
+        const val PRESET_VERSION = "4"
         const val MIN_VERSION_CODE = "26"
 
+        // Four-slot presets store each embedded script as liveprog1..liveprog4.
+        // The legacy single-script archive entry is retained for preset
+        // versions 1..3 and maps to slot 0 while loading.
         const val FILE_LIVEPROG = "liveprog"
 
         const val META_VERSION = "version"
@@ -237,6 +240,31 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
             }
             return null
         }
+    }
+}
+
+/** Archive entry name for an embedded four-slot script (slots 0..3). */
+internal fun liveprogEntryName(slot: Int): String = when (slot) {
+    0 -> "liveprog1"
+    1 -> "liveprog2"
+    2 -> "liveprog3"
+    3 -> "liveprog4"
+    else -> throw IllegalArgumentException("Unknown LiveProg slot: $slot")
+}
+
+/**
+ * Maps a four-slot archive entry name back to its slot, or a legacy
+ * [Preset.Companion.FILE_LIVEPROG_LEGACY] entry to slot 0. Returns null for
+ * any other name.
+ */
+internal fun liveprogSlotForEntry(name: String): Int? = when (name) {
+    Preset.FILE_LIVEPROG -> 0
+    else -> when (name) {
+        "liveprog1" -> 0
+        "liveprog2" -> 1
+        "liveprog3" -> 2
+        "liveprog4" -> 3
+        else -> null
     }
 }
 
