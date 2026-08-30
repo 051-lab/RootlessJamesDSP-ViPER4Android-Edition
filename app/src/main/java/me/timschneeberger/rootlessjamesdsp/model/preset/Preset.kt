@@ -117,7 +117,7 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
     companion object {
         /* Update constants as needed */
         const val PRESET_VERSION = "4"
-        const val MIN_VERSION_CODE = "26"
+        const val MIN_VERSION_CODE = "90"
 
         // Four-slot presets store each embedded script as liveprog1..liveprog4.
         // The legacy single-script archive entry is retained for preset
