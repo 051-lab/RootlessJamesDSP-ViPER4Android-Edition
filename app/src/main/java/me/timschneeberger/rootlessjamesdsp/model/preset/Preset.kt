@@ -8,6 +8,7 @@ import me.timschneeberger.rootlessjamesdsp.R
 import me.timschneeberger.rootlessjamesdsp.backup.BackupManager
 import me.timschneeberger.rootlessjamesdsp.liveprog.EelParser
 import me.timschneeberger.rootlessjamesdsp.utils.Constants
+import me.timschneeberger.rootlessjamesdsp.utils.LiveprogSlots
 import me.timschneeberger.rootlessjamesdsp.utils.extensions.ContextExtensions.broadcastPresetLoadEvent
 import me.timschneeberger.rootlessjamesdsp.utils.extensions.ContextExtensions.sendLocalBroadcast
 import me.timschneeberger.rootlessjamesdsp.utils.extensions.ContextExtensions.toast
@@ -77,18 +78,27 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
                     ?.filter { it.extension == "xml" }
                     ?.forEach(c::add)
 
-                findLiveprogScriptPath(ctx)?.let { path ->
-                    val liveprogFile = File(path)
-                    if (liveprogFile.exists()) {
-                        Timber.d("Saving included liveprog script state from '$path'")
+                // Embed each occupied four-slot script under its own archive
+                // entry. Only the file's name (not a traversable path) is
+                // recorded in metadata, and the loader re-arms the working slot.
+                var anyLiveprogIncluded = false
+                LiveprogSlots.read(ctx).forEachIndexed { slot, value ->
+                    if (value.isBlank())
+                        return@forEachIndexed
 
-                        c.metadata[META_LIVEPROG_INCLUDED] = true.toString()
-                        File(ctx.cacheDir, FILE_LIVEPROG).let {
-                            liveprogFile.copyTo(it, overwrite = true)
-                            c.add(it)
-                        }
+                    val source = File(ctx.getExternalFilesDir(null), value)
+                    if (!source.isFile) {
+                        Timber.w("Skipping missing liveprog source for slot ${slot + 1}: $value")
+                        return@forEachIndexed
                     }
+
+                    c.metadata["liveprog_slot_${slot + 1}_name"] = source.name
+                    c.add(source, liveprogEntryName(slot))
+                    anyLiveprogIncluded = true
+                    Timber.d("Saving included liveprog slot ${slot + 1} from '$value'")
                 }
+                if (anyLiveprogIncluded)
+                    c.metadata[META_LIVEPROG_INCLUDED] = true.toString()
             }
         }
         catch (ex: ErrnoException) {
@@ -114,6 +124,9 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
         // versions 1..3 and maps to slot 0 while loading.
         const val FILE_LIVEPROG = "liveprog"
 
+        /** First preset version that can carry one script per slot. */
+        const val FOUR_SLOT_VERSION = 4
+
         const val META_VERSION = "version"
         const val META_APP_VERSION = "app_version"
         const val META_APP_FLAVOR = "app_flavor"
@@ -129,7 +142,7 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
         private fun isKnownEntry(n: String) =
             (n.startsWith("dsp_") && n.endsWith("xml")) ||
                     n == FILE_EFFECT_LAYOUT ||
-                    n == FILE_LIVEPROG
+                    liveprogSlotForEntry(n) != null
 
         fun validate(inputStream: InputStream) = Tar.Reader(inputStream, ::isKnownEntry).validate()
 
@@ -169,13 +182,22 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
             files.forEach next@ { f ->
                 if(!isKnownEntry(f.name))
                     return@next
+                // Multi-slot embedded scripts are restored separately below and
+                // must not be copied into the shared prefs directory. The
+                // legacy FILE_LIVEPROG entry is left in shared prefs so the
+                // v1..3 branch below can read it back out.
+                if (liveprogSlotForEntry(f.name) != null && f.name != FILE_LIVEPROG)
+                    return@next
 
                 val target = File(currentPath(ctx), f.name)
                 f.copyTo(target, overwrite = true)
                 Timber.d("Copying to ${target.absolutePath}")
             }
 
-            if (files.any { it.name == FILE_LIVEPROG }) {
+            if (version >= FOUR_SLOT_VERSION) {
+                restoreFourSlots(ctx, files, metadata)
+            }
+            else if (files.any { it.name == FILE_LIVEPROG }) {
                 findLiveprogScriptPath(ctx)?.let {
                     val originalFile = File(it)
                     val targetFile =
@@ -239,6 +261,68 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
                 Timber.w(e)
             }
             return null
+        }
+
+        /**
+         * Restores each embedded four-slot script into the external Liveprog
+         * directory and re-arms the working slot. Names come from metadata and
+         * are reduced to their file name; blank names or names that differ from
+         * the raw value (i.e. any that embed separators or traversal) are
+         * rejected. Existing destinations are merged via [EelParser] so newer
+         * script code is preserved while the save-time controls are applied.
+         */
+        private fun restoreFourSlots(
+            ctx: Context,
+            files: Array<File>,
+            metadata: Map<String, String>
+        ) {
+            val liveprogDir =
+                File("${ctx.getExternalFilesDir(null)!!.path}/Liveprog").also { it.mkdirs() }
+            val canonicalLiveprog = liveprogDir.canonicalFile
+            var reloaded = false
+
+            files.forEach next@ { f ->
+                val slot = liveprogSlotForEntry(f.name) ?: return@next
+                if (f.name == FILE_LIVEPROG || slot < 0 || slot >= LiveprogSlots.COUNT)
+                    return@next
+
+                val rawName = metadata["liveprog_slot_${slot + 1}_name"] ?: return@next
+                val filename = File(rawName).name
+                if (filename.isBlank() || filename != rawName) {
+                    Timber.w("Rejecting liveprog name '$rawName' for slot ${slot + 1}")
+                    return@next
+                }
+
+                val targetFile = File(liveprogDir, filename)
+                if (targetFile.parentFile?.canonicalFile != canonicalLiveprog) {
+                    Timber.w("Refusing to write outside Liveprog: '${targetFile.absolutePath}'")
+                    return@next
+                }
+
+                if (!targetFile.exists()) {
+                    Timber.d("Extracting embedded liveprog ${slot + 1} to '${targetFile.absolutePath}'")
+                    f.copyTo(targetFile, overwrite = true)
+                    f.delete()
+                }
+                else {
+                    Timber.d("Merging params of embedded liveprog ${slot + 1} into '${targetFile.absolutePath}'")
+                    val parser = EelParser()
+                    val parserNew = EelParser()
+                    parser.load(f.absolutePath)
+                    parserNew.load(targetFile.absolutePath)
+                    parser.properties.forEach(parserNew::manipulateProperty)
+                    parserNew.save()
+                    f.delete()
+                }
+
+                // Re-arm the slot with the restored path so gaps are preserved.
+                LiveprogSlots.write(ctx, slot, "Liveprog/$filename")
+                reloaded = true
+            }
+
+            // Broadcast once after all entries, not once per slot.
+            if (reloaded)
+                ctx.sendLocalBroadcast(Intent(Constants.ACTION_SERVICE_RELOAD_LIVEPROG))
         }
     }
 }
