@@ -108,13 +108,13 @@ Output limiter (with selectable peak / soft-saturation modes), auto-loudness com
 - ~~**ViPER classic limiter**~~ — a faithful re-creation of V4A's own limiter, with its lookahead and transient character
 - ~~**Library management for Convolver & DDC**~~ — search, custom sorting, hiding and groups, plus downloading more profiles from public repositories
 - ~~**Idle battery fix**~~ — processing now stops when playback is silent, not just when apps release the audio session
+- ~~**Minimum-phase toggle**~~ — switch the graphic/parametric EQ between minimum-phase (no latency) and linear-phase filters
 
 ### 🔜 Planned
 
 - **Global "Poweramp-style" mode** — process the whole output mix with Android's built-in effect API instead of audio capture: no capture permission, no persistent notification, and apps that block capture (Spotify) would work. Trade-off: only EQ/bass/limiter-class effects can run there — the ViPER effects need the capture engine. Deprecated by Google and device-dependent (works on many Samsungs, often not Pixels), so it'll ship clearly labelled as experimental.
 - **Rooted mode** — for devices with the JamesDSP magisk module (testers welcome!)
 - **Search, sorting & hiding on the presets screen** — the convolver and DDC libraries have this now; presets are next
-- **Minimum-phase toggle** for the graphic EQ
 - **GitHub search for new profile sources** — built but parked while its edge cases are ironed out; adding your own repository link already works
 
 ## 📲 Download & Install
