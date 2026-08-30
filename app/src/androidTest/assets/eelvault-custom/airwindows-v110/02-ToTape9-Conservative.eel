@@ -1,0 +1,406 @@
+// Airwindows ToTape9 - RootlessJamesDSP LiveProg port
+// Algorithmic 1:1 translation of ToTape9Proc.cpp (Airwindows, MIT License)
+// Original: https://github.com/airwindows/airwindows/tree/master/plugins/LinuxVST/src/ToTape9
+// Port target: RootlessJamesDSP / JamesDSP EEL2 LiveProg
+//
+// Preserves ToTape9's Dubly encode/decode, flutter, bias slew network,
+// hysteresis, TapeHack2/TapeHack stages, head bump, ClipOnly3 output stage,
+// state order, constants and controls. C scientific notation is expanded.
+
+desc: Airwindows ToTape9 (RJDSP 1:1 Port)
+//tags: airwindows tape saturation hysteresis flutter head-bump clipper
+//author: Airwindows (Chris Johnson), EEL2 port for RootlessJamesDSP
+// rjdsp-eel: ignore-divisor overallscale, sampleRate, hdbA, hdbB, underBias, sqrt, spacing -- sample rates are clamped; resonances are fixed at 0.618; underBias is guarded; spacing is clamped to 1..16.
+
+input:0.48<0,1,0.001>Input
+tilt:0.5<0,1,0.001>Tilt
+shape:0.5<0,1,0.001>Shape
+flutter:0.05<0,1,0.001>Flutter
+flutterSpeed:0.5<0,1,0.001>Flutter Speed
+bias:0.5<0,1,0.001>Bias
+headBump:0.18<0,1,0.001>Head Bump
+headFreq:0.45<0,1,0.001>Head Frequency
+output:0.42<0,1,0.001>Output
+
+@init
+function aw_xorshift32(v)
+(
+    v ~= v << 13;
+    v ~= (v >> 17) & 32767;
+    v ~= v << 5;
+    v;
+);
+function aw_u32(v)
+(
+    v < 0 ? v + 4294967296 : v;
+);
+input = 0.48;
+tilt = 0.5;
+shape = 0.5;
+flutter = 0.05;
+flutterSpeed = 0.5;
+bias = 0.5;
+headBump = 0.18;
+headFreq = 0.45;
+output = 0.42;
+
+// Reserve EEL memory for all C++ arrays.
+mem = 0;
+dL = mem; mem += 1002;
+dR = mem; mem += 1002;
+gslew = mem; mem += 27;
+hdbA = mem; mem += 11;
+hdbB = mem; mem += 11;
+avg32L = mem; mem += 33; avg32R = mem; mem += 33;
+avg16L = mem; mem += 17; avg16R = mem; mem += 17;
+avg8L = mem; mem += 9; avg8R = mem; mem += 9;
+avg4L = mem; mem += 5; avg4R = mem; mem += 5;
+avg2L = mem; mem += 3; avg2R = mem; mem += 3;
+post32L = mem; mem += 33; post32R = mem; mem += 33;
+post16L = mem; mem += 17; post16R = mem; mem += 17;
+post8L = mem; mem += 9; post8R = mem; mem += 9;
+post4L = mem; mem += 5; post4R = mem; mem += 5;
+post2L = mem; mem += 3; post2R = mem; mem += 3;
+i = 0;
+loop(mem,
+    0[i] = 0;
+    i += 1;
+);
+
+// gslew triplet enum offsets.
+threshold1 = 2; threshold2 = 5; threshold3 = 8;
+threshold4 = 11; threshold5 = 14; threshold6 = 17;
+threshold7 = 20; threshold8 = 23; threshold9 = 26;
+
+// Head-bump biquad enum offsets.
+hdb_freq = 0; hdb_reso = 1; hdb_a0 = 2; hdb_a1 = 3; hdb_a2 = 4;
+hdb_b1 = 5; hdb_b2 = 6; hdb_sL1 = 7; hdb_sL2 = 8; hdb_sR1 = 9; hdb_sR2 = 10;
+
+iirEncL = 0; iirDecL = 0; compEncL = 1; compDecL = 1; avgEncL = 0; avgDecL = 0;
+iirEncR = 0; iirDecR = 0; compEncR = 1; compDecR = 1; avgEncR = 0; avgDecR = 0;
+sweepL = $pi; sweepR = $pi;
+nextmaxL = 0.5; nextmaxR = 0.5;
+gcount = 0;
+hysteresisL = 0; hysteresisR = 0;
+headBumpL = 0; headBumpR = 0;
+avgPos = 0; lastDarkL = 0; lastDarkR = 0;
+lastSampleL = 0; lastSampleR = 0;
+wasPosClipL = 0; wasNegClipL = 0; wasPosClipR = 0; wasNegClipR = 0;
+cachedRate = -1;
+
+fpdL = 1;
+while (fpdL < 16386) ( fpdL = floor(rand(2147483647)); );
+fpdR = 1;
+while (fpdR < 16386) ( fpdR = floor(rand(2147483647)); );
+
+@sample
+paramChanged = input != cachedInput || tilt != cachedTilt || shape != cachedShape || flutter != cachedFlutter || flutterSpeed != cachedFlutterSpeed || bias != cachedBias || headBump != cachedHeadBump || headFreq != cachedHeadFreq || output != cachedOutput || srate != cachedRate;
+paramChanged ? (
+    cachedInput = input; cachedTilt = tilt; cachedShape = shape; cachedFlutter = flutter;
+    cachedFlutterSpeed = flutterSpeed; cachedBias = bias; cachedHeadBump = headBump;
+    cachedHeadFreq = headFreq; cachedOutput = output; cachedRate = srate;
+    sampleRate = max(srate, 1);
+    overallscale = max(srate / 44100.0, 0.000001);
+    headBumpDamp = 0.0618 / sqrt(overallscale);
+    spacing = floor(overallscale); spacing < 1 ? spacing = 1; spacing > 16 ? spacing = 16;
+    slewsing = floor(overallscale * 2.0); slewsing < 2 ? slewsing = 2; slewsing > 32 ? slewsing = 32;
+    inputGain = pow(input * 2.0, 2.0);
+    dublyAmount = tilt * 2.0; outlyAmount = (1.0 - tilt) * -2.0; outlyAmount < -1.0 ? outlyAmount = -1.0;
+    iirEncFreq = (1.0 - shape) / overallscale; iirDecFreq = shape / overallscale;
+    flutDepth = pow(flutter, 6) * overallscale * 50.0; flutDepth > 498.0 ? flutDepth = 498.0;
+    flutFrequency = (0.02 * pow(flutterSpeed, 3)) / overallscale;
+    biasAmt = (bias * 2.0) - 1.0;
+    underBias = (pow(biasAmt, 4) * 0.25) / overallscale;
+    overBias = pow(1.0 - biasAmt, 3) / overallscale;
+    biasAmt > 0.0 ? underBias = 0.0; biasAmt < 0.0 ? overBias = 1.0 / overallscale;
+    gslew[threshold9] = overBias; overBias *= 1.618033988749894848204586;
+    gslew[threshold8] = overBias; overBias *= 1.618033988749894848204586;
+    gslew[threshold7] = overBias; overBias *= 1.618033988749894848204586;
+    gslew[threshold6] = overBias; overBias *= 1.618033988749894848204586;
+    gslew[threshold5] = overBias; overBias *= 1.618033988749894848204586;
+    gslew[threshold4] = overBias; overBias *= 1.618033988749894848204586;
+    gslew[threshold3] = overBias; overBias *= 1.618033988749894848204586;
+    gslew[threshold2] = overBias; overBias *= 1.618033988749894848204586;
+    gslew[threshold1] = overBias;
+    headBumpDrive = (headBump * 0.1) / overallscale; headBumpMix = headBump * 0.5;
+    hdbA[hdb_freq] = (((headFreq * headFreq) * 175.0) + 25.0) / sampleRate;
+    hdbB[hdb_freq] = hdbA[hdb_freq] * 0.9375;
+    hdbA[hdb_reso] = hdbB[hdb_reso] = 0.618033988749894848204586;
+    hdbA[hdb_a1] = hdbB[hdb_a1] = 0.0;
+    K = tan($pi * hdbA[hdb_freq]); norm = 1.0 / (1.0 + K / hdbA[hdb_reso] + K * K);
+    hdbA[hdb_a0] = K / hdbA[hdb_reso] * norm; hdbA[hdb_a2] = -hdbA[hdb_a0]; hdbA[hdb_b1] = 2.0 * (K * K - 1.0) * norm; hdbA[hdb_b2] = (1.0 - K / hdbA[hdb_reso] + K * K) * norm;
+    K = tan($pi * hdbB[hdb_freq]); norm = 1.0 / (1.0 + K / hdbB[hdb_reso] + K * K);
+    hdbB[hdb_a0] = K / hdbB[hdb_reso] * norm; hdbB[hdb_a2] = -hdbB[hdb_a0]; hdbB[hdb_b1] = 2.0 * (K * K - 1.0) * norm; hdbB[hdb_b2] = (1.0 - K / hdbB[hdb_reso] + K * K) * norm;
+    outputGain = output * 2.0;
+);
+
+inputSampleL = spl0;
+inputSampleR = spl1;
+abs(inputSampleL) < 0.0000000000000000000000118 ? inputSampleL = aw_u32(fpdL) * 0.0000000000000000118;
+abs(inputSampleR) < 0.0000000000000000000000118 ? inputSampleR = aw_u32(fpdR) * 0.0000000000000000118;
+inputGain != 1.0 ? ( inputSampleL *= inputGain; inputSampleR *= inputGain; );
+
+// Dubly encode.
+iirEncL = (iirEncL * (1.0 - iirEncFreq)) + (inputSampleL * iirEncFreq);
+highPart = ((inputSampleL - iirEncL) * 2.848);
+highPart += avgEncL; avgEncL = (inputSampleL - iirEncL) * 1.152;
+highPart > 1.0 ? highPart = 1.0; highPart < -1.0 ? highPart = -1.0;
+dubly = abs(highPart);
+dubly > 0.0 ? (
+    adjust = log(1.0 + (255.0 * dubly)) / 2.40823996531; // rjdsp-eel: ignore EEL402 -- dubly is clamped above zero in this branch.
+    adjust > 0.0 ? dubly /= adjust;
+    compEncL = (compEncL * (1.0 - iirEncFreq)) + (dubly * iirEncFreq);
+    inputSampleL += ((highPart * compEncL) * dublyAmount);
+);
+iirEncR = (iirEncR * (1.0 - iirEncFreq)) + (inputSampleR * iirEncFreq);
+highPart = ((inputSampleR - iirEncR) * 2.848);
+highPart += avgEncR; avgEncR = (inputSampleR - iirEncR) * 1.152;
+highPart > 1.0 ? highPart = 1.0; highPart < -1.0 ? highPart = -1.0;
+dubly = abs(highPart);
+dubly > 0.0 ? (
+    adjust = log(1.0 + (255.0 * dubly)) / 2.40823996531; // rjdsp-eel: ignore EEL402 -- dubly is clamped above zero in this branch.
+    adjust > 0.0 ? dubly /= adjust;
+    compEncR = (compEncR * (1.0 - iirEncFreq)) + (dubly * iirEncFreq);
+    inputSampleR += ((highPart * compEncR) * dublyAmount);
+);
+
+// Flutter.
+flutDepth > 0.0 ? (
+    (gcount < 0 || gcount > 999) ? gcount = 999;
+    dL[gcount] = inputSampleL;
+    count = gcount;
+    offset = flutDepth + (flutDepth * sin(sweepL));
+    sweepL += nextmaxL * flutFrequency;
+    sweepL > ($pi * 2.0) ? (
+        sweepL -= $pi * 2.0;
+        flutA = 0.24 + ((aw_u32(fpdL) / 4294967295.0) * 0.74);
+        fpdL = aw_xorshift32(fpdL);
+        flutB = 0.24 + ((aw_u32(fpdL) / 4294967295.0) * 0.74);
+        abs(flutA - sin(sweepR + nextmaxR)) < abs(flutB - sin(sweepR + nextmaxR)) ? nextmaxL = flutA : nextmaxL = flutB;
+    );
+    count += floor(offset);
+    frac = offset - floor(offset);
+    wrap = count > 999 ? 1000 : 0;
+    wrap2 = (count + 1) > 999 ? 1000 : 0;
+    inputSampleL = (dL[count - wrap] * (1.0 - frac)) + (dL[count + 1 - wrap2] * frac);
+    dR[gcount] = inputSampleR;
+    count = gcount;
+    offset = flutDepth + (flutDepth * sin(sweepR));
+    sweepR += nextmaxR * flutFrequency;
+    sweepR > ($pi * 2.0) ? (
+        sweepR -= $pi * 2.0;
+        flutA = 0.24 + ((aw_u32(fpdR) / 4294967295.0) * 0.74);
+        fpdR = aw_xorshift32(fpdR);
+        flutB = 0.24 + ((aw_u32(fpdR) / 4294967295.0) * 0.74);
+        abs(flutA - sin(sweepL + nextmaxL)) < abs(flutB - sin(sweepL + nextmaxL)) ? nextmaxR = flutA : nextmaxR = flutB;
+    );
+    count += floor(offset);
+    frac = offset - floor(offset);
+    wrap = count > 999 ? 1000 : 0;
+    wrap2 = (count + 1) > 999 ? 1000 : 0;
+    inputSampleR = (dR[count - wrap] * (1.0 - frac)) + (dR[count + 1 - wrap2] * frac);
+    gcount -= 1;
+);
+
+// Bias network: nine golden-ratio slew stages.
+abs(biasAmt) > 0.001 ? (
+    x = 0;
+    loop(9,
+        underBias > 0.0 ? (
+            stuck = abs(inputSampleL - (gslew[x] / 0.975)) / underBias;
+            stuck < 1.0 ? inputSampleL = (inputSampleL * stuck) + ((gslew[x] / 0.975) * (1.0 - stuck));
+            stuck = abs(inputSampleR - (gslew[x + 1] / 0.975)) / underBias;
+            stuck < 1.0 ? inputSampleR = (inputSampleR * stuck) + ((gslew[x + 1] / 0.975) * (1.0 - stuck));
+        );
+        (inputSampleL - gslew[x]) > gslew[x + 2] ? inputSampleL = gslew[x] + gslew[x + 2];
+        -(inputSampleL - gslew[x]) > gslew[x + 2] ? inputSampleL = gslew[x] - gslew[x + 2];
+        gslew[x] = inputSampleL * 0.975;
+        (inputSampleR - gslew[x + 1]) > gslew[x + 2] ? inputSampleR = gslew[x + 1] + gslew[x + 2];
+        -(inputSampleR - gslew[x + 1]) > gslew[x + 2] ? inputSampleR = gslew[x + 1] - gslew[x + 2];
+        gslew[x + 1] = inputSampleR * 0.975;
+        x += 3;
+    );
+);
+
+applyHysteresis = (1.0 - abs(inputSampleL)) * (1.0 - abs(inputSampleL)) * 0.012;
+hysteresisL = max(min(hysteresisL + (inputSampleL * abs(inputSampleL)), 0.011449), -0.011449) * 0.999;
+inputSampleL += hysteresisL * applyHysteresis;
+applyHysteresis = (1.0 - abs(inputSampleR)) * (1.0 - abs(inputSampleR)) * 0.012;
+hysteresisR = max(min(hysteresisR + (inputSampleR * abs(inputSampleR)), 0.011449), -0.011449) * 0.999;
+inputSampleR += hysteresisR * applyHysteresis;
+
+// TapeHack2 pre-slew darkening.
+darkSampleL = inputSampleL; darkSampleR = inputSampleR;
+avgPos > 31 ? avgPos = 0;
+slewsing > 31 ? (
+    avg32L[avgPos] = darkSampleL; avg32R[avgPos] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(32, darkSampleL += avg32L[x]; darkSampleR += avg32R[x]; x += 1;);
+    darkSampleL /= 32; darkSampleR /= 32;
+);
+slewsing > 15 ? (
+    idx = avgPos % 16; avg16L[idx] = darkSampleL; avg16R[idx] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(16, darkSampleL += avg16L[x]; darkSampleR += avg16R[x]; x += 1;);
+    darkSampleL /= 16; darkSampleR /= 16;
+);
+slewsing > 7 ? (
+    idx = avgPos % 8; avg8L[idx] = darkSampleL; avg8R[idx] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(8, darkSampleL += avg8L[x]; darkSampleR += avg8R[x]; x += 1;);
+    darkSampleL /= 8; darkSampleR /= 8;
+);
+slewsing > 3 ? (
+    idx = avgPos % 4; avg4L[idx] = darkSampleL; avg4R[idx] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(4, darkSampleL += avg4L[x]; darkSampleR += avg4R[x]; x += 1;);
+    darkSampleL /= 4; darkSampleR /= 4;
+);
+slewsing > 1 ? (
+    idx = avgPos % 2; avg2L[idx] = darkSampleL; avg2R[idx] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(2, darkSampleL += avg2L[x]; darkSampleR += avg2R[x]; x += 1;);
+    darkSampleL /= 2; darkSampleR /= 2;
+);
+avgSlewL = min(abs(lastDarkL - inputSampleL) * 0.12 * overallscale, 1.0);
+avgSlewL = 1.0 - (1.0 - avgSlewL * 1.0 - avgSlewL);
+inputSampleL = (inputSampleL * (1.0 - avgSlewL)) + (darkSampleL * avgSlewL);
+lastDarkL = darkSampleL;
+avgSlewR = min(abs(lastDarkR - inputSampleR) * 0.12 * overallscale, 1.0);
+avgSlewR = 1.0 - (1.0 - avgSlewR * 1.0 - avgSlewR);
+inputSampleR = (inputSampleR * (1.0 - avgSlewR)) + (darkSampleR * avgSlewR);
+lastDarkR = darkSampleR;
+
+// TapeHack degenerate sine polynomial.
+inputSampleL = max(min(inputSampleL, 2.305929007734908), -2.305929007734908);
+addtwo = inputSampleL * inputSampleL; empower = inputSampleL * addtwo;
+inputSampleL -= empower / 6.0; empower *= addtwo;
+inputSampleL += empower / 69.0; empower *= addtwo;
+inputSampleL -= empower / 2530.08; empower *= addtwo;
+inputSampleL += empower / 224985.6; empower *= addtwo;
+inputSampleL -= empower / 9979200.0;
+inputSampleR = max(min(inputSampleR, 2.305929007734908), -2.305929007734908);
+addtwo = inputSampleR * inputSampleR; empower = inputSampleR * addtwo;
+inputSampleR -= empower / 6.0; empower *= addtwo;
+inputSampleR += empower / 69.0; empower *= addtwo;
+inputSampleR -= empower / 2530.08; empower *= addtwo;
+inputSampleR += empower / 224985.6; empower *= addtwo;
+inputSampleR -= empower / 9979200.0;
+
+// TapeHack2 post-slew darkening.
+darkSampleL = inputSampleL; darkSampleR = inputSampleR;
+avgPos > 31 ? avgPos = 0;
+slewsing > 31 ? (
+    post32L[avgPos] = darkSampleL; post32R[avgPos] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(32, darkSampleL += post32L[x]; darkSampleR += post32R[x]; x += 1;);
+    darkSampleL /= 32; darkSampleR /= 32;
+);
+slewsing > 15 ? (
+    idx = avgPos % 16; post16L[idx] = darkSampleL; post16R[idx] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(16, darkSampleL += post16L[x]; darkSampleR += post16R[x]; x += 1;);
+    darkSampleL /= 16; darkSampleR /= 16;
+);
+slewsing > 7 ? (
+    idx = avgPos % 8; post8L[idx] = darkSampleL; post8R[idx] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(8, darkSampleL += post8L[x]; darkSampleR += post8R[x]; x += 1;);
+    darkSampleL /= 8; darkSampleR /= 8;
+);
+slewsing > 3 ? (
+    idx = avgPos % 4; post4L[idx] = darkSampleL; post4R[idx] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(4, darkSampleL += post4L[x]; darkSampleR += post4R[x]; x += 1;);
+    darkSampleL /= 4; darkSampleR /= 4;
+);
+slewsing > 1 ? (
+    idx = avgPos % 2; post2L[idx] = darkSampleL; post2R[idx] = darkSampleR; darkSampleL = 0; darkSampleR = 0;
+    x = 0; loop(2, darkSampleL += post2L[x]; darkSampleR += post2R[x]; x += 1;);
+    darkSampleL /= 2; darkSampleR /= 2;
+);
+avgPos += 1;
+inputSampleL = (inputSampleL * (1.0 - avgSlewL)) + (darkSampleL * avgSlewL);
+inputSampleR = (inputSampleR * (1.0 - avgSlewR)) + (darkSampleR * avgSlewR);
+
+// Head bump.
+headBumpSampleL = 0; headBumpSampleR = 0;
+headBumpMix > 0.0 ? (
+    headBumpL += inputSampleL * headBumpDrive;
+    headBumpL -= headBumpL * headBumpL * headBumpL * headBumpDamp;
+    headBumpR += inputSampleR * headBumpDrive;
+    headBumpR -= headBumpR * headBumpR * headBumpR * headBumpDamp;
+    headBiqSampleL = (headBumpL * hdbA[hdb_a0]) + hdbA[hdb_sL1];
+    hdbA[hdb_sL1] = (headBumpL * hdbA[hdb_a1]) - (headBiqSampleL * hdbA[hdb_b1]) + hdbA[hdb_sL2];
+    hdbA[hdb_sL2] = (headBumpL * hdbA[hdb_a2]) - (headBiqSampleL * hdbA[hdb_b2]);
+    headBumpSampleL = (headBiqSampleL * hdbB[hdb_a0]) + hdbB[hdb_sL1];
+    hdbB[hdb_sL1] = (headBiqSampleL * hdbB[hdb_a1]) - (headBumpSampleL * hdbB[hdb_b1]) + hdbB[hdb_sL2];
+    hdbB[hdb_sL2] = (headBiqSampleL * hdbB[hdb_a2]) - (headBumpSampleL * hdbB[hdb_b2]);
+    headBiqSampleR = (headBumpR * hdbA[hdb_a0]) + hdbA[hdb_sR1];
+    hdbA[hdb_sR1] = (headBumpR * hdbA[hdb_a1]) - (headBiqSampleR * hdbA[hdb_b1]) + hdbA[hdb_sR2];
+    hdbA[hdb_sR2] = (headBumpR * hdbA[hdb_a2]) - (headBiqSampleR * hdbA[hdb_b2]);
+    headBumpSampleR = (headBiqSampleR * hdbB[hdb_a0]) + hdbB[hdb_sR1];
+    hdbB[hdb_sR1] = (headBiqSampleR * hdbB[hdb_a1]) - (headBumpSampleR * hdbB[hdb_b1]) + hdbB[hdb_sR2];
+    hdbB[hdb_sR2] = (headBiqSampleR * hdbB[hdb_a2]) - (headBumpSampleR * hdbB[hdb_b2]);
+);
+inputSampleL += headBumpSampleL * headBumpMix;
+inputSampleR += headBumpSampleR * headBumpMix;
+
+// Dubly decode.
+iirDecL = (iirDecL * (1.0 - iirDecFreq)) + (inputSampleL * iirDecFreq);
+highPart = ((inputSampleL - iirDecL) * 2.628);
+highPart += avgDecL; avgDecL = (inputSampleL - iirDecL) * 1.372;
+highPart > 1.0 ? highPart = 1.0; highPart < -1.0 ? highPart = -1.0;
+dubly = abs(highPart);
+dubly > 0.0 ? (
+    adjust = log(1.0 + (255.0 * dubly)) / 2.40823996531; // rjdsp-eel: ignore EEL402 -- dubly is clamped above zero in this branch.
+    adjust > 0.0 ? dubly /= adjust;
+    compDecL = (compDecL * (1.0 - iirDecFreq)) + (dubly * iirDecFreq);
+    inputSampleL += ((highPart * compDecL) * outlyAmount);
+);
+iirDecR = (iirDecR * (1.0 - iirDecFreq)) + (inputSampleR * iirDecFreq);
+highPart = ((inputSampleR - iirDecR) * 2.628);
+highPart += avgDecR; avgDecR = (inputSampleR - iirDecR) * 1.372;
+highPart > 1.0 ? highPart = 1.0; highPart < -1.0 ? highPart = -1.0;
+dubly = abs(highPart);
+dubly > 0.0 ? (
+    adjust = log(1.0 + (255.0 * dubly)) / 2.40823996531; // rjdsp-eel: ignore EEL402 -- dubly is clamped above zero in this branch.
+    adjust > 0.0 ? dubly /= adjust;
+    compDecR = (compDecR * (1.0 - iirDecFreq)) + (dubly * iirDecFreq);
+    inputSampleR += ((highPart * compDecR) * outlyAmount);
+);
+
+outputGain != 1.0 ? ( inputSampleL *= outputGain; inputSampleR *= outputGain; );
+
+// ClipOnly3, left.
+noise = 1.0 - ((aw_u32(fpdL) / 4294967295.0) * 0.076);
+wasPosClipL ? (
+    inputSampleL < lastSampleL ? lastSampleL = (0.9085097 * noise) + (inputSampleL * (1.0 - noise)) : lastSampleL = 0.94;
+);
+wasPosClipL = 0;
+inputSampleL > 0.9085097 ? ( wasPosClipL = 1; inputSampleL = (0.9085097 * noise) + (lastSampleL * (1.0 - noise)); );
+wasNegClipL ? (
+    inputSampleL > lastSampleL ? lastSampleL = (-0.9085097 * noise) + (inputSampleL * (1.0 - noise)) : lastSampleL = -0.94;
+);
+wasNegClipL = 0;
+inputSampleL < -0.9085097 ? ( wasNegClipL = 1; inputSampleL = (-0.9085097 * noise) + (lastSampleL * (1.0 - noise)); );
+finalSlew = abs(lastSampleL - inputSampleL);
+delayedSample = lastSampleL; lastSampleL = inputSampleL; inputSampleL = delayedSample;
+(wasPosClipL || wasNegClipL) ? lastSampleL *= (spacing + 1.0) / spacing;
+postclip = 0.94 / (1.0 + (finalSlew * 1.3986013));
+inputSampleL > postclip ? inputSampleL = postclip; inputSampleL < -postclip ? inputSampleL = -postclip;
+
+// ClipOnly3, right.
+noise = 1.0 - ((aw_u32(fpdR) / 4294967295.0) * 0.076);
+wasPosClipR ? (
+    inputSampleR < lastSampleR ? lastSampleR = (0.9085097 * noise) + (inputSampleR * (1.0 - noise)) : lastSampleR = 0.94;
+);
+wasPosClipR = 0;
+inputSampleR > 0.9085097 ? ( wasPosClipR = 1; inputSampleR = (0.9085097 * noise) + (lastSampleR * (1.0 - noise)); );
+wasNegClipR ? (
+    inputSampleR > lastSampleR ? lastSampleR = (-0.9085097 * noise) + (inputSampleR * (1.0 - noise)) : lastSampleR = -0.94;
+);
+wasNegClipR = 0;
+inputSampleR < -0.9085097 ? ( wasNegClipR = 1; inputSampleR = (-0.9085097 * noise) + (lastSampleR * (1.0 - noise)); );
+finalSlew = abs(lastSampleR - inputSampleR);
+delayedSample = lastSampleR; lastSampleR = inputSampleR; inputSampleR = delayedSample;
+(wasPosClipR || wasNegClipR) ? lastSampleR *= (spacing + 1.0) / spacing;
+postclip = 0.94 / (1.0 + (finalSlew * 1.3986013));
+inputSampleR > postclip ? inputSampleR = postclip; inputSampleR < -postclip ? inputSampleR = -postclip;
+
+// Advance the Airwindows RNG without redundant intermediate-stage float dither.
+fpdL = aw_xorshift32(fpdL); fpdR = aw_xorshift32(fpdR);
+
+spl0 = inputSampleL;
+spl1 = inputSampleR;

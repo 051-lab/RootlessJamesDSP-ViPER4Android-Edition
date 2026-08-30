@@ -1,0 +1,302 @@
+// Airwindows Srsly3 - RootlessJamesDSP LiveProg port
+// Algorithmic 1:1 translation of Srsly3Proc.cpp (Airwindows, MIT License)
+// Original: https://github.com/airwindows/airwindows/tree/master/plugins/LinuxVST/src/Srsly3
+// Port target: RootlessJamesDSP / JamesDSP EEL2 LiveProg
+//
+// Preserves the float processReplacing() topology, coefficient math, nonlinear
+// filter behavior, mid/side reconstruction and dry/wet control. Per-effect
+// float dither is omitted on Android's float audio path.
+
+desc: Airwindows Srsly3 (RJDSP 1:1 Port)
+//tags: airwindows stereo psychoacoustic widening spatial mid-side
+//author: Airwindows (Chris Johnson), EEL2 port for RootlessJamesDSP
+// rjdsp-eel: ignore-divisor sampleRate, biquadM2, biquadM7, biquadM10, biquadL3, biquadL7, biquadR3, biquadR7, biquadS3, biquadS5 -- sample rate is clamped; all Q values are derived from controls with a 0.25 floor.
+
+center:0.5<0,1,0.001>Center
+space:0.56<0,1,0.001>Space
+level:1.0<0,1,0.001>Level
+q:0.42<0,1,0.001>Q
+nonlin:0.18<0,1,0.001>Nonlin
+wet:0.25<0,1,0.001>Dry/Wet
+
+@init
+function aw_xorshift32(v)
+(
+    v ~= v << 13;
+    v ~= (v >> 17) & 32767;
+    v ~= v << 5;
+    v;
+);
+
+function aw_u32(v)
+(
+    v < 0 ? v + 4294967296 : v;
+);
+
+center = 0.5;
+space = 0.56;
+level = 1.0;
+q = 0.42;
+nonlin = 0.18;
+wet = 0.25;
+
+cachedRate = cachedCenter = cachedSpace = -1;
+cachedLevel = cachedQ = cachedNonlin = cachedWet = -1;
+
+// Srsly3 biquad layout.
+biq_freq = 0;
+biq_reso = 1;
+biq_a0 = 2;
+biq_a1 = 3;
+biq_a2 = 4;
+biq_b1 = 5;
+biq_b2 = 6;
+biq_sL1 = 7;
+biq_sL2 = 8;
+biq_sR1 = 9;
+biq_sR2 = 10;
+biq_total = 11;
+
+// Reserve separate EEL memory ranges for each C++ array.
+mem = 0;
+biquadM2 = mem; mem += biq_total;
+biquadM7 = mem; mem += biq_total;
+biquadM10 = mem; mem += biq_total;
+biquadL3 = mem; mem += biq_total;
+biquadL7 = mem; mem += biq_total;
+biquadR3 = mem; mem += biq_total;
+biquadR7 = mem; mem += biq_total;
+biquadS3 = mem; mem += biq_total;
+biquadS5 = mem; mem += biq_total;
+
+i = 0;
+loop(mem,
+    0[i] = 0;
+    i += 1;
+);
+
+fpdL = 1;
+while (fpdL < 16386) (
+    fpdL = floor(rand(2147483647));
+);
+fpdR = 1;
+while (fpdR < 16386) (
+    fpdR = floor(rand(2147483647));
+);
+
+@sample
+(
+srate != cachedRate || center != cachedCenter || space != cachedSpace ||
+level != cachedLevel || q != cachedQ || nonlin != cachedNonlin || wet != cachedWet
+) ? (
+cachedRate = srate;
+cachedCenter = center;
+cachedSpace = space;
+cachedLevel = level;
+cachedQ = q;
+cachedNonlin = nonlin;
+cachedWet = wet;
+
+sampleRate = max(srate, 22000);
+sampleRate < 22000 ? sampleRate = 22000;
+
+biquadM2[biq_freq] = 2000 / sampleRate;
+biquadM7[biq_freq] = 7000 / sampleRate;
+biquadM10[biq_freq] = 10000 / sampleRate;
+biquadL3[biq_freq] = 3000 / sampleRate;
+biquadL7[biq_freq] = 7000 / sampleRate;
+biquadR3[biq_freq] = 3000 / sampleRate;
+biquadR7[biq_freq] = 7000 / sampleRate;
+biquadS3[biq_freq] = 3000 / sampleRate;
+biquadS5[biq_freq] = 5000 / sampleRate;
+
+focusM = 15.0 - (center * 10.0);
+focusS = 21.0 - (space * 15.0);
+Q = q + 0.25;
+gainM = center * 2.0;
+gainS = space * 2.0;
+gainS > 1.0 ? (
+    gainM /= gainS;
+    gainS *= gainS;
+);
+gainM > 1.0 ? gainM = 1.0;
+
+biquadM2[biq_reso] = focusM * 0.25 * Q;
+biquadM7[biq_reso] = focusM * Q;
+biquadM10[biq_reso] = focusM * Q;
+biquadS3[biq_reso] = focusM * Q;
+biquadS5[biq_reso] = focusM * Q;
+biquadL3[biq_reso] = focusS * Q;
+biquadL7[biq_reso] = focusS * Q;
+biquadR3[biq_reso] = focusS * Q;
+biquadR7[biq_reso] = focusS * Q;
+
+K = tan($pi * biquadM2[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadM2[biq_reso] + K * K);
+biquadM2[biq_a0] = K / biquadM2[biq_reso] * norm;
+biquadM2[biq_a2] = -biquadM2[biq_a0];
+biquadM2[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadM2[biq_b2] = (1.0 - K / biquadM2[biq_reso] + K * K) * norm;
+
+K = tan($pi * biquadM7[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadM7[biq_reso] + K * K);
+biquadM7[biq_a0] = K / biquadM7[biq_reso] * norm;
+biquadM7[biq_a2] = -biquadM7[biq_a0];
+biquadM7[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadM7[biq_b2] = (1.0 - K / biquadM7[biq_reso] + K * K) * norm;
+
+K = tan($pi * biquadM10[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadM10[biq_reso] + K * K);
+biquadM10[biq_a0] = K / biquadM10[biq_reso] * norm;
+biquadM10[biq_a2] = -biquadM10[biq_a0];
+biquadM10[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadM10[biq_b2] = (1.0 - K / biquadM10[biq_reso] + K * K) * norm;
+
+K = tan($pi * biquadL3[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadL3[biq_reso] + K * K);
+biquadL3[biq_a0] = K / biquadL3[biq_reso] * norm;
+biquadL3[biq_a2] = -biquadL3[biq_a0];
+biquadL3[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadL3[biq_b2] = (1.0 - K / biquadL3[biq_reso] + K * K) * norm;
+
+K = tan($pi * biquadL7[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadL7[biq_reso] + K * K);
+biquadL7[biq_a0] = K / biquadL7[biq_reso] * norm;
+biquadL7[biq_a2] = -biquadL7[biq_a0];
+biquadL7[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadL7[biq_b2] = (1.0 - K / biquadL7[biq_reso] + K * K) * norm;
+
+K = tan($pi * biquadR3[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadR3[biq_reso] + K * K);
+biquadR3[biq_a0] = K / biquadR3[biq_reso] * norm;
+biquadR3[biq_a2] = -biquadR3[biq_a0];
+biquadR3[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadR3[biq_b2] = (1.0 - K / biquadR3[biq_reso] + K * K) * norm;
+
+K = tan($pi * biquadR7[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadR7[biq_reso] + K * K);
+biquadR7[biq_a0] = K / biquadR7[biq_reso] * norm;
+biquadR7[biq_a2] = -biquadR7[biq_a0];
+biquadR7[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadR7[biq_b2] = (1.0 - K / biquadR7[biq_reso] + K * K) * norm;
+
+K = tan($pi * biquadS3[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadS3[biq_reso] + K * K);
+biquadS3[biq_a0] = K / biquadS3[biq_reso] * norm;
+biquadS3[biq_a2] = -biquadS3[biq_a0];
+biquadS3[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadS3[biq_b2] = (1.0 - K / biquadS3[biq_reso] + K * K) * norm;
+
+K = tan($pi * biquadS5[biq_freq]);
+norm = 1.0 / (1.0 + K / biquadS5[biq_reso] + K * K);
+biquadS5[biq_a0] = K / biquadS5[biq_reso] * norm;
+biquadS5[biq_a2] = -biquadS5[biq_a0];
+biquadS5[biq_b1] = 2.0 * (K * K - 1.0) * norm;
+biquadS5[biq_b2] = (1.0 - K / biquadS5[biq_reso] + K * K) * norm;
+
+depthM = pow(center, 2) * 2.0;
+depthS = pow(space, 2) * 2.0;
+outLevel = level;
+nonLin = pow(nonlin, 2);
+dryWet = wet;
+);
+
+inputSampleL = spl0;
+inputSampleR = spl1;
+abs(inputSampleL) < 0.0000000000000000000000118 ? inputSampleL = aw_u32(fpdL) * 0.0000000000000000118;
+abs(inputSampleR) < 0.0000000000000000000000118 ? inputSampleR = aw_u32(fpdR) * 0.0000000000000000118;
+drySampleL = inputSampleL;
+drySampleR = inputSampleR;
+
+mid = inputSampleL + inputSampleR;
+rawmid = mid * 0.5;
+side = inputSampleL - inputSampleR;
+boostside = side * depthS;
+
+dia0 = abs(biquadM2[biq_a0] * (1.0 + (mid * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (mid * dia0) + biquadM2[biq_sL1];
+biquadM2[biq_sL1] = (-tempSample * biquadM2[biq_b1]) + biquadM2[biq_sL2];
+biquadM2[biq_sL2] = (mid * -dia0) - (tempSample * biquadM2[biq_b2]);
+M2Sample = tempSample;
+
+dia0 = abs(biquadM7[biq_a0] * (1.0 + (mid * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (mid * dia0) + biquadM7[biq_sL1];
+biquadM7[biq_sL1] = (-tempSample * biquadM7[biq_b1]) + biquadM7[biq_sL2];
+biquadM7[biq_sL2] = (mid * -dia0) - (tempSample * biquadM7[biq_b2]);
+M7Sample = -tempSample * 2.0;
+
+dia0 = abs(biquadM10[biq_a0] * (1.0 + (mid * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (mid * dia0) + biquadM10[biq_sL1];
+biquadM10[biq_sL1] = (-tempSample * biquadM10[biq_b1]) + biquadM10[biq_sL2];
+biquadM10[biq_sL2] = (mid * -dia0) - (tempSample * biquadM10[biq_b2]);
+M10Sample = -tempSample * 2.0;
+
+dia0 = abs(biquadS3[biq_a0] * (1.0 + (side * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (side * dia0) + biquadS3[biq_sL1];
+biquadS3[biq_sL1] = (-tempSample * biquadS3[biq_b1]) + biquadS3[biq_sL2];
+biquadS3[biq_sL2] = (side * -dia0) - (tempSample * biquadS3[biq_b2]);
+S3Sample = tempSample * 2.0;
+
+dia0 = abs(biquadS5[biq_a0] * (1.0 + (side * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (side * dia0) + biquadS5[biq_sL1];
+biquadS5[biq_sL1] = (-tempSample * biquadS5[biq_b1]) + biquadS5[biq_sL2];
+biquadS5[biq_sL2] = (side * -dia0) - (tempSample * biquadS5[biq_b2]);
+S5Sample = -tempSample * 5.0;
+
+mid = (M2Sample + M7Sample + M10Sample) * depthM;
+side = (S3Sample + S5Sample + boostside) * depthS;
+msOutSampleL = (mid + side) / 2.0;
+msOutSampleR = (mid - side) / 2.0;
+
+isoSampleL = inputSampleL - rawmid;
+isoSampleR = inputSampleR - rawmid;
+
+dia0 = abs(biquadL3[biq_a0] * (1.0 + (isoSampleL * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (isoSampleL * dia0) + biquadL3[biq_sL1];
+biquadL3[biq_sL1] = (-tempSample * biquadL3[biq_b1]) + biquadL3[biq_sL2];
+biquadL3[biq_sL2] = (isoSampleL * -dia0) - (tempSample * biquadL3[biq_b2]);
+L3Sample = tempSample;
+
+dia0 = abs(biquadR3[biq_a0] * (1.0 + (isoSampleR * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (isoSampleR * dia0) + biquadR3[biq_sL1];
+biquadR3[biq_sL1] = (-tempSample * biquadR3[biq_b1]) + biquadR3[biq_sL2];
+biquadR3[biq_sL2] = (isoSampleR * -dia0) - (tempSample * biquadR3[biq_b2]);
+R3Sample = tempSample;
+
+dia0 = abs(biquadL7[biq_a0] * (1.0 + (isoSampleL * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (isoSampleL * dia0) + biquadL7[biq_sL1];
+biquadL7[biq_sL1] = (-tempSample * biquadL7[biq_b1]) + biquadL7[biq_sL2];
+biquadL7[biq_sL2] = (isoSampleL * -dia0) - (tempSample * biquadL7[biq_b2]);
+L7Sample = tempSample * 3.0;
+
+dia0 = abs(biquadR7[biq_a0] * (1.0 + (isoSampleR * nonLin))); dia0 > 1.0 ? dia0 = 1.0;
+tempSample = (isoSampleR * dia0) + biquadR7[biq_sL1];
+biquadR7[biq_sL1] = (-tempSample * biquadR7[biq_b1]) + biquadR7[biq_sL2];
+biquadR7[biq_sL2] = (isoSampleR * -dia0) - (tempSample * biquadR7[biq_b2]);
+R7Sample = tempSample * 3.0;
+
+processingL = msOutSampleL + ((L3Sample + L7Sample) * depthS);
+processingR = msOutSampleR + ((R3Sample + R7Sample) * depthS);
+
+mid = inputSampleL + inputSampleR;
+side = inputSampleL - inputSampleR;
+mid *= gainM;
+side *= gainS;
+inputSampleL = ((mid + side) / 2.0) + processingL;
+inputSampleR = ((mid - side) / 2.0) + processingR;
+
+outLevel < 1.0 ? (
+    inputSampleL *= outLevel;
+    inputSampleR *= outLevel;
+);
+
+dryWet != 1.0 ? (
+    inputSampleL = (inputSampleL * dryWet) + (drySampleL * (1.0 - dryWet));
+    inputSampleR = (inputSampleR * dryWet) + (drySampleR * (1.0 - dryWet));
+);
+
+// Advance the Airwindows RNG without redundant intermediate-stage float dither.
+fpdL = aw_xorshift32(fpdL); fpdR = aw_xorshift32(fpdR);
+
+spl0 = inputSampleL;
+spl1 = inputSampleR;

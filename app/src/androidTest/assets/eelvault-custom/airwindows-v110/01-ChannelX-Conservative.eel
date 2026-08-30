@@ -1,0 +1,335 @@
+// Airwindows ChannelX - RootlessJamesDSP LiveProg port
+// Algorithmic 1:1 translation of ChannelXProc.cpp (Airwindows, MIT License)
+// Original: https://github.com/airwindows/airwindows/tree/master/plugins/LinuxVST/src/ChannelX
+// License: MIT (derived from Airwindows ChannelX source)
+// Port target: RootlessJamesDSP / JamesDSP EEL2 LiveProg
+//
+// Notes:
+// - Preserves ChannelX processing topology, constants, state update order, and controls.
+// - EEL2 has no fma() or C++ long double type, so those expressions are evaluated
+//   with the host EEL numeric type. This is the closest algorithmic port possible.
+// - Airwindows denormal protection and RNG state progression are retained. The
+//   redundant per-effect float dither is omitted on Android's float audio path.
+
+desc: Airwindows ChannelX (RJDSP 1:1 Port)
+//tags: airwindows channel console saturation tone-color zero-latency
+//author: Airwindows (Chris Johnson), EEL2 port for RootlessJamesDSP
+
+consoleType:2<0,4,1{Neve,API,SSL,Teac,Mackie}>Console Type
+drive:25<0,200,1>Drive (%)
+output:1.0<0,1,0.001>Output
+
+@init
+function aw_sin_series(v) local(x2 temp y)
+(
+    y = v;
+    x2 = v * v;
+    temp = v * x2;
+    y -= temp * 0.16666666666666666666666666666666666; temp *= x2;
+    y += temp * 0.00833333333333333333333333333333333; temp *= x2;
+    y -= temp * 0.00019841269841269841269841269841269; temp *= x2;
+    y += temp * 0.00000275573192239858906525573192239; temp *= x2;
+    y -= temp * 0.00000002505210838544171877521083854; temp *= x2;
+    y += temp * 0.00000000016059043836821614599392377; temp *= x2;
+    y -= temp * 0.00000000000076471637318198164759011; temp *= x2;
+    y += temp * 0.00000000000000281145725434552076319; temp *= x2;
+    y -= temp * 0.00000000000000000822063524662432971; temp *= x2;
+    y += temp * 0.00000000000000000001957294106339126;
+    y;
+);
+
+// EEL's right shift is arithmetic. Masking reproduces uint32_t logical >> 17.
+function aw_xorshift32(v)
+(
+    v ~= v << 13;
+    v ~= (v >> 17) & 32767;
+    v ~= v << 5;
+    v;
+);
+
+function aw_u32(v)
+(
+    v < 0 ? v + 4294967296 : v;
+);
+
+consoleType = 2;
+drive = 25;
+output = 1.0;
+
+// RetroBass / nonlinear highpass states.
+rbSampleLA = rbSampleRA = rbSampleLB = rbSampleRB = 0;
+
+// Slew states.
+lastSampleLA = lastSampleLB = lastSampleLC = 0;
+lastSampleRA = lastSampleRB = lastSampleRC = 0;
+flip = 0;
+
+// Derivative-BIP states for the main saturation stage.
+dvLA = dvLB = dvLC = dvLD = 0;
+pvLA = pvLB = pvLC = pvLD = 0;
+dvRA = dvRB = dvRC = dvRD = 0;
+pvRA = pvRB = pvRC = pvRD = 0;
+
+// Derivative-BIP states for the alternating RetroBass/highpass stage.
+drbLA = drbLB = drbLC = drbLD = 0;
+praLA = praLB = praLC = praLD = 0;
+prbLA = prbLB = prbLC = prbLD = 0;
+drbRA = drbRB = drbRC = drbRD = 0;
+praRA = praRB = praRC = praRD = 0;
+prbRA = prbRB = prbRC = prbRD = 0;
+
+// Airwindows per-channel dither/denormal PRNG state.
+fpdL = 1;
+while (fpdL < 16386) (
+    fpdL = floor(rand(2147483647));
+);
+fpdR = 1;
+while (fpdR < 16386) (
+    fpdR = floor(rand(2147483647));
+);
+cachedRate = cachedConsoleType = cachedDrive = cachedOutput = -1;
+
+@sample
+// -----------------------------------------------------------------------------
+// Parameter mapping: identical behavior to A/B/C in ChannelX.
+// B is displayed as 0..200%, so density is simply drive / 100.
+// -----------------------------------------------------------------------------
+(srate != cachedRate || consoleType != cachedConsoleType || drive != cachedDrive || output != cachedOutput) ? (
+cachedRate = srate; cachedConsoleType = consoleType; cachedDrive = drive; cachedOutput = output;
+overallscale = srate / 44100;
+density = drive * 0.01;
+phattity = density - 1;
+density > 1 ? density = 1;
+phattity < 0 ? phattity = 0;
+nonLin = 5 - density;
+outLevel = output;
+
+mode = floor(consoleType + 0.5);
+rbAmount = 0.005832;
+threshold = 0.33362176;
+mode == 0 ? (
+    rbAmount = 0.005832;
+    threshold = 0.33362176;
+) : mode == 1 ? (
+    rbAmount = 0.004096;
+    threshold = 0.59969536;
+) : mode == 2 ? (
+    rbAmount = 0.004913;
+    threshold = 0.84934656;
+) : mode == 3 ? (
+    rbAmount = 0.009216;
+    threshold = 0.149;
+) : (
+    rbAmount = 0.011449;
+    threshold = 0.092;
+);
+rbAmount /= overallscale;
+);
+
+inputSampleL = spl0;
+inputSampleR = spl1;
+
+// Airwindows denormal protection.
+abs(inputSampleL) < 0.0000000000000000000000118 ? (
+    inputSampleL = aw_u32(fpdL) * 0.0000000000000000118;
+);
+abs(inputSampleR) < 0.0000000000000000000000118 ? (
+    inputSampleR = aw_u32(fpdR) * 0.0000000000000000118;
+);
+
+// -----------------------------------------------------------------------------
+// Nonlinear interleaved highpass + RetroBass even-harmonic modulation, Left.
+// -----------------------------------------------------------------------------
+dielectricScale = abs(2 - ((inputSampleL + nonLin) / nonLin));
+flip ? (
+    rbSampleLA = (rbSampleLA * (1 - (rbAmount * dielectricScale)))
+               + (inputSampleL * rbAmount * dielectricScale);
+    abs(rbSampleLA) > 0.000000000000000000000000000000000000118 ? (
+        bip_delta = inputSampleL;
+        rbDenom = rbSampleLA * 0.96;
+        rbWork = inputSampleL * rbDenom;
+        rbSq = rbWork * rbWork;
+        // C++: fma((rbSq * -1/6), rbSq, rbWork)
+        rbWork = ((rbSq * -0.166666666666666) * rbSq) + rbWork;
+        inputSampleL = rbWork / rbDenom;
+
+        drbLA = bip_delta - inputSampleL;
+        drbLB = praLA - drbLA; praLA = drbLA;
+        drbLC = praLB - drbLB; praLB = drbLB;
+        drbLD = praLC - drbLC; praLC = drbLC;
+        drbE  = praLD - drbLD; praLD = drbLD;
+        inputSampleL *= 1 + (abs(drbLC) * 0.0618)
+                          + (abs(drbLD) * -0.05982)
+                          + (abs(drbE)  * 0.0206);
+    );
+    inputSampleL -= rbSampleLA * 0.92;
+) : (
+    rbSampleLB = (rbSampleLB * (1 - (rbAmount * dielectricScale)))
+               + (inputSampleL * rbAmount * dielectricScale);
+    abs(rbSampleLB) > 0.000000000000000000000000000000000000118 ? (
+        bip_delta = inputSampleL;
+        rbDenom = rbSampleLB * 0.96;
+        rbWork = inputSampleL * rbDenom;
+        rbSq = rbWork * rbWork;
+        rbWork = ((rbSq * -0.166666666666666) * rbSq) + rbWork;
+        inputSampleL = rbWork / rbDenom;
+
+        drbLA = bip_delta - inputSampleL;
+        drbLB = prbLA - drbLA; prbLA = drbLA;
+        drbLC = prbLB - drbLB; prbLB = drbLB;
+        drbLD = prbLC - drbLC; prbLC = drbLC;
+        drbE  = prbLD - drbLD; prbLD = drbLD;
+        inputSampleL *= 1 + (abs(drbLC) * 0.0618)
+                          + (abs(drbLD) * -0.05982)
+                          + (abs(drbE)  * 0.0206);
+    );
+    inputSampleL -= rbSampleLB * 0.92;
+);
+
+// -----------------------------------------------------------------------------
+// Nonlinear interleaved highpass + RetroBass even-harmonic modulation, Right.
+// -----------------------------------------------------------------------------
+dielectricScale = abs(2 - ((inputSampleR + nonLin) / nonLin));
+flip ? (
+    rbSampleRA = (rbSampleRA * (1 - (rbAmount * dielectricScale)))
+               + (inputSampleR * rbAmount * dielectricScale);
+    abs(rbSampleRA) > 0.000000000000000000000000000000000000118 ? (
+        bip_delta = inputSampleR;
+        rbDenom = rbSampleRA * 0.96;
+        rbWork = inputSampleR * rbDenom;
+        rbSq = rbWork * rbWork;
+        rbWork = ((rbSq * -0.166666666666666) * rbSq) + rbWork;
+        inputSampleR = rbWork / rbDenom;
+
+        drbRA = bip_delta - inputSampleR;
+        drbRB = praRA - drbRA; praRA = drbRA;
+        drbRC = praRB - drbRB; praRB = drbRB;
+        drbRD = praRC - drbRC; praRC = drbRC;
+        drbE  = praRD - drbRD; praRD = drbRD;
+        inputSampleR *= 1 + (abs(drbRC) * 0.0618)
+                          + (abs(drbRD) * -0.05982)
+                          + (abs(drbE)  * 0.0206);
+    );
+    inputSampleR -= rbSampleRA * 0.92;
+) : (
+    rbSampleRB = (rbSampleRB * (1 - (rbAmount * dielectricScale)))
+               + (inputSampleR * rbAmount * dielectricScale);
+    abs(rbSampleRB) > 0.000000000000000000000000000000000000118 ? (
+        bip_delta = inputSampleR;
+        rbDenom = rbSampleRB * 0.96;
+        rbWork = inputSampleR * rbDenom;
+        rbSq = rbWork * rbWork;
+        rbWork = ((rbSq * -0.166666666666666) * rbSq) + rbWork;
+        inputSampleR = rbWork / rbDenom;
+
+        drbRA = bip_delta - inputSampleR;
+        drbRB = prbRA - drbRA; prbRA = drbRA;
+        drbRC = prbRB - drbRB; prbRB = drbRB;
+        drbRD = prbRC - drbRC; prbRC = drbRC;
+        drbE  = prbRD - drbRD; prbRD = drbRD;
+        inputSampleR *= 1 + (abs(drbRC) * 0.0618)
+                          + (abs(drbRD) * -0.05982)
+                          + (abs(drbE)  * 0.0206);
+    );
+    inputSampleR -= rbSampleRB * 0.92;
+);
+
+// -----------------------------------------------------------------------------
+// Longhand Density / Spiral stage, Left.
+// -----------------------------------------------------------------------------
+bip_delta = inputSampleL;
+drySample = inputSampleL;
+inputSampleL = max(-1, min(1, inputSampleL));
+phatSample = aw_sin_series(inputSampleL * 1.57079633);
+scaledSample = inputSampleL * 1.2533141373155;
+distSample = scaledSample * abs(scaledSample);
+distSample = aw_sin_series(distSample);
+divisor = abs(scaledSample);
+divisor == 0 ? divisor = 1;
+distSample /= divisor;
+inputSampleL = distSample;
+density < 1 ? inputSampleL = (drySample * (1 - density)) + (distSample * density);
+phattity > 0 ? inputSampleL = (inputSampleL * (1 - phattity)) + (phatSample * phattity);
+
+dvLA = bip_delta - inputSampleL;
+dvLB = pvLA - dvLA; pvLA = dvLA;
+dvLC = pvLB - dvLB; pvLB = dvLB;
+dvLD = pvLC - dvLC; pvLC = dvLC;
+dvE  = pvLD - dvLD; pvLD = dvLD;
+inputSampleL *= 1 + (abs(dvLC) * 0.0618)
+                  + (abs(dvLD) * -0.05982)
+                  + (abs(dvE)  * 0.0206);
+
+// -----------------------------------------------------------------------------
+// Longhand Density / Spiral stage, Right.
+// -----------------------------------------------------------------------------
+bip_delta = inputSampleR;
+drySample = inputSampleR;
+inputSampleR = max(-1, min(1, inputSampleR));
+phatSample = aw_sin_series(inputSampleR * 1.57079633);
+scaledSample = inputSampleR * 1.2533141373155;
+distSample = scaledSample * abs(scaledSample);
+distSample = aw_sin_series(distSample);
+divisor = abs(scaledSample);
+divisor == 0 ? divisor = 1;
+distSample /= divisor;
+inputSampleR = distSample;
+density < 1 ? inputSampleR = (drySample * (1 - density)) + (distSample * density);
+phattity > 0 ? inputSampleR = (inputSampleR * (1 - phattity)) + (phatSample * phattity);
+
+dvRA = bip_delta - inputSampleR;
+dvRB = pvRA - dvRA; pvRA = dvRA;
+dvRC = pvRB - dvRB; pvRB = dvRB;
+dvRD = pvRC - dvRC; pvRC = dvRC;
+dvE  = pvRD - dvRD; pvRD = dvRD;
+inputSampleR *= 1 + (abs(dvRC) * 0.0618)
+                  + (abs(dvRD) * -0.05982)
+                  + (abs(dvE)  * 0.0206);
+
+// -----------------------------------------------------------------------------
+// Channel-style golden-ratio slew clamp.
+// -----------------------------------------------------------------------------
+clamp = (lastSampleLB - lastSampleLC) * 0.381966011250105;
+clamp -= (lastSampleLA - lastSampleLB) * 0.6180339887498948482045;
+clamp += inputSampleL - lastSampleLA;
+lastSampleLC = lastSampleLB;
+lastSampleLB = lastSampleLA;
+lastSampleLA = inputSampleL;
+clamp > threshold ? inputSampleL = lastSampleLB + threshold;
+-clamp > threshold ? inputSampleL = lastSampleLB - threshold;
+lastSampleLA = (lastSampleLA * 0.381966011250105)
+             + (inputSampleL * 0.6180339887498948482045);
+
+clamp = (lastSampleRB - lastSampleRC) * 0.381966011250105;
+clamp -= (lastSampleRA - lastSampleRB) * 0.6180339887498948482045;
+clamp += inputSampleR - lastSampleRA;
+lastSampleRC = lastSampleRB;
+lastSampleRB = lastSampleRA;
+lastSampleRA = inputSampleR;
+clamp > threshold ? inputSampleR = lastSampleRB + threshold;
+-clamp > threshold ? inputSampleR = lastSampleRB - threshold;
+lastSampleRA = (lastSampleRA * 0.381966011250105)
+             + (inputSampleR * 0.6180339887498948482045);
+
+flip = !flip;
+
+outLevel < 1 ? (
+    inputSampleL *= outLevel;
+    inputSampleR *= outLevel;
+);
+
+// -----------------------------------------------------------------------------
+// Advance the Airwindows RNG without redundant intermediate-stage float dither.
+// -----------------------------------------------------------------------------
+fpdL = aw_xorshift32(fpdL);
+uL = aw_u32(fpdL);
+fpdR = aw_xorshift32(fpdR);
+uR = aw_u32(fpdR);
+uDist = abs(uL - uR);
+(uDist < 1073741824 || uDist > 3221225472) ? (
+    fpdR = aw_xorshift32(fpdR);
+    uR = aw_u32(fpdR);
+);
+
+spl0 = inputSampleL;
+spl1 = inputSampleR;

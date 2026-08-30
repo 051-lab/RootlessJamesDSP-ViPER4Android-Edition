@@ -100,6 +100,7 @@ Output limiter (with selectable peak / soft-saturation modes), auto-loudness com
 - ~~**Interactive parametric equalizer**~~ — drag bands on the curve, rotary fine-tuning, live apply *(v2.0.0)*
 - ~~**Reorderable DSP chain**~~ — put the effects in any order you like *(v2.0.0)*
 - ~~**Full echo / delay unit**~~ — ping-pong, filtered feedback, bit crushing, modulation, on its own knob panel *(v2.0.0)*
+- ~~**Four-slot LiveProg presets**~~ — every occupied slot is embedded and restored in order, so one preset carries a full chain *(v2.6.0, see [docs](/docs/liveprog-four-slot-presets.md))*
 
 ### 🧪 Done, in the next release
 

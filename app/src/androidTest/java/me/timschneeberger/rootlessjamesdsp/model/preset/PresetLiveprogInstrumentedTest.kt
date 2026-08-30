@@ -159,4 +159,84 @@ class PresetLiveprogInstrumentedTest {
             String(presetFile.readBytes(), Charsets.UTF_8).contains("/Liveprog/slot0.eel")
         )
     }
+
+    private fun sha256File(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(8192)
+            while (true) {
+                val read = input.read(buf)
+                if (read < 0) break
+                md.update(buf, 0, read)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun writeAsset(slot: Int, assetPath: String, name: String): String {
+        val dest = File(liveprogDir, name)
+        context.assets.open(assetPath).use { input -> dest.outputStream().use { input.copyTo(it) } }
+        return dest.absolutePath
+    }
+
+    @Test
+    fun airwindowsChainRestoresAllFourSlotsByteForByte() {
+        // The four v1.1.0 conservative Airwindows assets, in chain order.
+        val chain = listOf(
+            "eelvault-custom/airwindows-v110/01-ChannelX-Conservative.eel" to "01-ChannelX-Conservative.eel",
+            "eelvault-custom/airwindows-v110/02-ToTape9-Conservative.eel" to "02-ToTape9-Conservative.eel",
+            "eelvault-custom/airwindows-v110/03-Srsly3-Conservative.eel" to "03-Srsly3-Conservative.eel",
+            "eelvault-custom/airwindows-v110/04-X2Buss-Conservative.eel" to "04-X2Buss-Conservative.eel",
+        )
+
+        // Pin the published hashes (EELVault/releases/v1.1.0/SHA256SUMS).
+        val expectedHashes = mapOf(
+            "01-ChannelX-Conservative.eel" to "ffeb1892642214b5818b365902ef1cc730578482f2e4be136cc0e94164f6c126",
+            "02-ToTape9-Conservative.eel" to "025c47fafd81108fa691f13ddfaba9e3b4e478fe4bbad60b97db7e8ee897f5ce",
+            "03-Srsly3-Conservative.eel" to "6a1ff5ef8f923fa83f77942eb82f2c0353a214c9b30d59cc8005ace7d65efe72",
+            "04-X2Buss-Conservative.eel" to "0196ab1ce9a8243de3860ffef15d072806b708952fc0500422195cc68be1a567",
+        )
+
+        // Guards the assets themselves: they must match the published release.
+        chain.forEachIndexed { slot, (assetPath, name) ->
+            val assetFile = File(liveprogDir, name)
+            writeAsset(slot, assetPath, name)
+            assertEquals(
+                "Asset $name must match published SHA256",
+                expectedHashes[name],
+                sha256File(assetFile)
+            )
+        }
+
+        // Assign all four slots in order, save, clear, load.
+        chain.forEachIndexed { slot, (_, name) ->
+            LiveprogSlots.write(context, slot, "Liveprog/$name")
+        }
+        assertTrue("Chain preset save should succeed", Preset(presetFile.name, presetDir).save())
+
+        clearAllPending()
+        chain.forEach { (_, name) -> File(liveprogDir, name).delete() }
+
+        Preset.load(context, presetFile.inputStream())
+
+        // Both the slot assignment and the file order round-trip.
+        assertEquals(
+            listOf(
+                "01-ChannelX-Conservative.eel",
+                "02-ToTape9-Conservative.eel",
+                "03-Srsly3-Conservative.eel",
+                "04-X2Buss-Conservative.eel",
+            ),
+            LiveprogSlots.read(context).map { File(it).name }
+        )
+
+        // Content must be byte-identical to the published release.
+        chain.forEach { (_, name) ->
+            assertEquals(
+                "Restored $name must match published hash",
+                expectedHashes[name],
+                sha256File(File(liveprogDir, name))
+            )
+        }
+    }
 }
