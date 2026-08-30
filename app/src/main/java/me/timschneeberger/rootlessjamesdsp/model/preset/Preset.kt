@@ -86,7 +86,11 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
                     if (value.isBlank())
                         return@forEachIndexed
 
-                    val source = File(ctx.getExternalFilesDir(null), value)
+                    val source = containedLiveprogSource(ctx.getExternalFilesDir(null)!!, value)
+                    if (source == null) {
+                        Timber.w("Skipping liveprog source outside Liveprog for slot ${slot + 1}: $value")
+                        return@forEachIndexed
+                    }
                     if (!source.isFile) {
                         Timber.w("Skipping missing liveprog source for slot ${slot + 1}: $value")
                         return@forEachIndexed
@@ -231,6 +235,37 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
             ctx.broadcastPresetLoadEvent()
 
             return metadata.toMutableMap()
+        }
+
+        /**
+         * Resolves a slot value against the external files dir and returns the
+         * source file only when its canonical path is inside the canonical
+         * Liveprog directory. Returns null for traversal, sibling-directory,
+         * or arbitrary absolute paths, so save never reads files from outside
+         * the app's Liveprog directory.
+         */
+        internal fun containedLiveprogSource(base: File, value: String): File? {
+            if (value.isBlank()) return null
+            val source = File(base, value)
+            // File.canonicalFile throws IOException on Windows for paths like
+            // "C:/other-drive/..." whose drive letter differs from base's;
+            // such paths are definitionally outside Liveprog, so reject them.
+            val canonicalSource = try {
+                source.canonicalFile
+            } catch (_: IOException) {
+                return null
+            }
+            val canonicalLiveprog = try {
+                File(base, "Liveprog").canonicalFile
+            } catch (_: IOException) {
+                return null
+            }
+            if (canonicalSource.path != canonicalLiveprog.path &&
+                !canonicalSource.path.startsWith(canonicalLiveprog.path + File.separator)
+            ) {
+                return null
+            }
+            return canonicalSource
         }
 
         private fun findLiveprogScriptPath(ctx: Context): String? {
