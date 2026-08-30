@@ -279,6 +279,12 @@ class Preset(val name: String, externalPath: File? = null): KoinComponent {
             val liveprogDir =
                 File("${ctx.getExternalFilesDir(null)!!.path}/Liveprog").also { it.mkdirs() }
             val canonicalLiveprog = liveprogDir.canonicalFile
+            // A loaded preset fully defines the slot state: stale assignments
+            // from the previous chain are cleared first so slots omitted by the
+            // preset (gaps) end up empty rather than keeping old scripts.
+            for (slot in 0 until LiveprogSlots.COUNT) {
+                LiveprogSlots.write(ctx, slot, "")
+            }
             var reloaded = false
 
             files.forEach next@ { f ->

@@ -170,6 +170,50 @@ class PresetLiveprogInstrumentedTest {
         )
     }
 
+    @Test
+    fun gappedPresetClearsStaleSlotsOnLoad() {
+        // Regression: loading a format-v4 preset must fully define the slot
+        // state. A gapped preset (slots 1 and 3 occupied) loaded over an
+        // already fully populated four-slot state must leave slots 2 and 4
+        // empty, not silently keep the previous chain's scripts.
+        createScripts()
+
+        // Populate the "previous" state: all four slots occupied.
+        (0 until 4).forEach { i ->
+            LiveprogSlots.write(context, i, "Liveprog/slot$i.eel")
+        }
+
+        // Build a gapped v4 preset: only slots 1 and 3 (indexes 0 and 2).
+        val gappedSources = listOf(0, 2).map { i ->
+            val f = File(liveprogDir, "slot$i.eel")
+            LiveprogSlots.write(context, i, "Liveprog/slot$i.eel")
+            f
+        }
+        LiveprogSlots.write(context, 1, "")
+        LiveprogSlots.write(context, 3, "")
+        assertTrue("Gapped preset save should succeed", Preset(presetFile.name, presetDir).save())
+
+        // Simulate the fully populated working state the load will land on.
+        (0 until 4).forEach { i ->
+            LiveprogSlots.write(context, i, "Liveprog/slot$i.eel")
+        }
+
+        Preset.load(context, presetFile.inputStream())
+
+        val restored = LiveprogSlots.read(context)
+        // Slots the preset defines are restored with the preset's scripts.
+        assertEquals("slot0.eel", File(restored[0]).name)
+        assertEquals("slot2.eel", File(restored[2]).name)
+        // Slots the preset omits must be empty, not stale.
+        assertEquals("Slot 2 must be empty after gapped load", "", restored[1])
+        assertEquals("Slot 4 must be empty after gapped load", "", restored[3])
+        // The embedded scripts themselves round-trip byte-for-byte.
+        gappedSources.forEach { src ->
+            val restoredFile = File(liveprogDir, src.name)
+            assertTrue("Restored ${src.name} must exist", restoredFile.exists())
+        }
+    }
+
     private fun sha256File(file: File): String {
         val md = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
