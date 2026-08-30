@@ -2,6 +2,8 @@ name: Build fork APK
 on:
   push:
     branches: [ master, viper-extras ]
+  pull_request:
+    branches: [ master ]
   workflow_dispatch:
 
 jobs:

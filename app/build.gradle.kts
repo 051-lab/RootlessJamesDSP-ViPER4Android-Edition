@@ -103,7 +103,14 @@ android {
             //proguardFiles("proguard-android-optimize.txt", "proguard-rules.pro")
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("release")
+            // Assign the release signing config only when signing material is
+            // actually configured; unsigned builds remain gated by the explicit
+            // allowUnsignedRelease property below.
+            signingConfig = if (releaseSigningConfigured) {
+                signingConfigs.getByName("release")
+            } else {
+                null
+            }
         }
         create("preview") {
             initWith(getByName("release"))
@@ -228,9 +235,11 @@ if (!releaseSigningConfigured && !allowUnsignedRelease) {
 // Root/plugin package IDs are intentionally distinct, but they do not have
 // Firebase clients in the tracked configuration. F-Droid builds must not fail
 // while trying to generate unused Google Services resources for those variants.
+// Match the Root flavor precisely: a bare startsWith("processRoot") would also
+// catch processRootless* and starve Crashlytics of its gmpAppId input.
 tasks.configureEach {
     if (name.endsWith("GoogleServices") &&
-        (name.startsWith("processRoot") || name.startsWith("processPlugin"))) {
+        ((name.startsWith("processRoot") && !name.startsWith("processRootless")) || name.startsWith("processPlugin"))) {
         enabled = false
     }
 }
