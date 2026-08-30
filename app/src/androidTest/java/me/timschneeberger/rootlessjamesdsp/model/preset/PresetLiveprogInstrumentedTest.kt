@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import me.timschneeberger.rootlessjamesdsp.utils.LiveprogSlots
+import me.timschneeberger.rootlessjamesdsp.utils.Constants
 import me.timschneeberger.rootlessjamesdsp.utils.storage.Tar
+import me.timschneeberger.rootlessjamesdsp.R
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -128,6 +130,14 @@ class PresetLiveprogInstrumentedTest {
         // file via the shared prefs, keep it assigned (the legacy loader relies
         // on that preference), and delete the script before loading.
         LiveprogSlots.write(context, 0, "Liveprog/legacy.eel")
+        // LiveprogSlots.write uses async apply(); the legacy loader reads this
+        // pref straight from the on-disk XML via DocumentBuilder, so flush
+        // synchronously to avoid a disk-write race.
+        context.getSharedPreferences(Constants.PREF_LIVEPROG, Context.MODE_MULTI_PROCESS)
+            .edit()
+            .putString(context.getString(R.string.key_liveprog_file), "Liveprog/legacy.eel")
+            .putBoolean(context.getString(R.string.key_liveprog_enable), true)
+            .commit()
         legacyScript.delete()
 
         Preset.load(context, fixture.inputStream())
@@ -175,7 +185,12 @@ class PresetLiveprogInstrumentedTest {
 
     private fun writeAsset(slot: Int, assetPath: String, name: String): String {
         val dest = File(liveprogDir, name)
-        context.assets.open(assetPath).use { input -> dest.outputStream().use { input.copyTo(it) } }
+        // Fixture assets live in the androidTest APK; open them from the
+        // instrumentation context, not the target app (whose APK has none).
+        val testContext = InstrumentationRegistry.getInstrumentation().context
+        testContext.assets.open(assetPath).use { input ->
+            dest.outputStream().use { input.copyTo(it) }
+        }
         return dest.absolutePath
     }
 
