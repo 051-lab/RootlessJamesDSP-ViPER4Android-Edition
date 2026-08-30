@@ -155,14 +155,24 @@ object Tar {
 
             return mutableMapOf<String, String>().apply {
                 metadataBytes.toString().lines().forEach {
-                    val args = it.split("=")
-                    if(args.size < 2)
-                        return@forEach
-
-                    this[args[0]] = args[1].trim()
+                    putAll(parseMetadata(it))
                 }
             }
         }
     }
 
+}
+
+/**
+ * Parses one "key=value" metadata line, splitting on the first '=' only so a
+ * value may itself contain '='. An empty line, a blank key, or a line with no
+ * delimiter contributes nothing to the resulting map.
+ */
+internal fun parseMetadata(line: String): Map<String, String> {
+    val parts = line.split("=", limit = 2)
+    return if (parts.size == 2 && parts[0].isNotBlank()) {
+        mapOf(parts[0] to parts[1].trim())
+    } else {
+        emptyMap()
+    }
 }
