@@ -496,6 +496,8 @@ class RootlessAudioProcessorService : BaseAudioProcessorService() {
         // TODO Move all audio-related code to C++
         recorderThread = Thread {
             try {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+
                 // Rebuilding the processing pipeline must not overwrite the current
                 // session-aware notification with a false "idle" state.
                 ServiceNotificationHelper.pushServiceNotification(
