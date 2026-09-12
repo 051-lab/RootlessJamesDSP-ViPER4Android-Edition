@@ -306,7 +306,7 @@
     <string name="agc_target">Target level</string>
     <string name="agc_maxboost">Maximum boost</string>
     <string name="hpsurround_enable">Headphone surround+ (lite)</string>
-    <string name="hpsurround_info">Pulls the sound out of the middle of your head and places it in front of you: head-shadowed crossfeed with realistic ear-to-ear timing, multi-tap early reflections with a short room tail, and stereo widening. Headphones only — try 60-90% strength. Inspired by ViPER\'s VHS+.</string>
+    <string name="hpsurround_info" formatted="false">Pulls the sound out of the middle of your head and places it in front of you: head-shadowed crossfeed with realistic ear-to-ear timing, multi-tap early reflections with a short room tail, and stereo widening. Headphones only — try 60-90% strength. Inspired by ViPER\'s VHS+.</string>
     <string name="hpsurround_strength">Effect strength</string>
     <string name="hpsurround_room">Room reflections</string>
     <string name="about_version_summary">%1$s (based on RootlessJamesDSP %2$s)</string>

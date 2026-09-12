@@ -2,6 +2,7 @@ package me.timschneeberger.rootlessjamesdsp.flavor
 
 import android.content.Context
 import android.os.Build
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,6 +22,7 @@ import me.timschneeberger.rootlessjamesdsp.utils.sdkAbove
 import me.timschneeberger.rootlessjamesdsp.utils.storage.Cache
 import me.timschneeberger.rootlessjamesdsp.view.ProgressDialog
 import timber.log.Timber
+import java.io.File
 
 class UpdateManager(val context: Context) {
     private val installer = SessionInstaller(context)
@@ -70,12 +72,14 @@ class UpdateManager(val context: Context) {
 
                         is InstallState.Downloading -> {
                             dialog.apply {
-                                isIndeterminate = false
+                                isIndeterminate = it.totalBytes <= 0
                                 title = context.getString(R.string.self_update_state_downloading)
                                 unit = "MB"
                                 divisor = 1e6
-                                currentProgress = it.currentBytes.toInt()
-                                maxProgress = it.totalBytes.toInt()
+                                if (it.totalBytes > 0) {
+                                    currentProgress = it.currentBytes.toInt()
+                                    maxProgress = it.totalBytes.toInt()
+                                }
                             }
                         }
 
@@ -84,6 +88,10 @@ class UpdateManager(val context: Context) {
                                 R.string.self_update_download_fail,
                                 it.error?.localizedMessage ?: context.getString(R.string.unknown_error)
                             )
+                        )
+
+                        is InstallState.InstallFailed -> handleError(
+                            it.error?.localizedMessage ?: context.getString(R.string.unknown_error)
                         )
 
                         is InstallState.Installing -> {
@@ -120,8 +128,7 @@ class UpdateManager(val context: Context) {
             if(Cache.getReleaseFile(context, targetName).exists()) {
                 // Already downloaded
                 emit(InstallState.Installing)
-                installer.performInstall(targetName)
-                emit(InstallState.InstallDone)
+                emit(install(targetName, Cache.getReleaseFile(context, targetName)))
                 return@flow
             }
 
@@ -134,10 +141,25 @@ class UpdateManager(val context: Context) {
                 emit(state)
 
                 if(state is InstallState.Installing && it is ApiExtensions.DownloadState.Finished) {
-                    installer.performInstall(it.file.name)
-                    emit(InstallState.InstallDone)
+                    emit(install(it.file.name, it.file))
                 }
             }
+        }
+    }
+
+    private suspend fun install(name: String, file: File): InstallState {
+        return try {
+            if (installer.performInstall(name)) {
+                InstallState.InstallDone
+            } else {
+                file.delete()
+                InstallState.InstallFailed()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            file.delete()
+            InstallState.InstallFailed(e)
         }
     }
 
@@ -147,6 +169,7 @@ class UpdateManager(val context: Context) {
             constructor(copy: ApiExtensions.DownloadState.Downloading) : this(copy.progress, copy.currentBytes, copy.totalBytes)
         }
         data class DownloadFailed(val error: Throwable? = null) : InstallState()
+        data class InstallFailed(val error: Throwable? = null) : InstallState()
         object Installing : InstallState()
         object InstallDone: InstallState()
     }

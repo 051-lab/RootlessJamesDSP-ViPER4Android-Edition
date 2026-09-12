@@ -3362,7 +3362,9 @@ DRWAV_API drwav_result drwav_uninit(drwav* pWav)
         
         if (paddingSize > 0) {
             drwav_uint64 paddingData = 0;
-            drwav__write(pWav, &paddingData, paddingSize);  /* Byte order does not matter for this. */
+            if (drwav__write(pWav, &paddingData, paddingSize) != paddingSize) {  /* Byte order does not matter for this. */
+                result = DRWAV_IO_ERROR;
+            }
         }
 
         /*
@@ -3374,25 +3376,41 @@ DRWAV_API drwav_result drwav_uninit(drwav* pWav)
                 /* The "RIFF" chunk size. */
                 if (pWav->onSeek(pWav->pUserData, 4, drwav_seek_origin_start)) {
                     drwav_uint32 riffChunkSize = drwav__riff_chunk_size_riff(pWav->dataChunkDataSize);
-                    drwav__write_u32ne_to_le(pWav, riffChunkSize);
+                    if (drwav__write_u32ne_to_le(pWav, riffChunkSize) != sizeof(riffChunkSize)) {
+                        result = DRWAV_IO_ERROR;
+                    }
+                } else {
+                    result = DRWAV_IO_ERROR;
                 }
 
                 /* the "data" chunk size. */
                 if (pWav->onSeek(pWav->pUserData, (int)pWav->dataChunkDataPos + 4, drwav_seek_origin_start)) {
                     drwav_uint32 dataChunkSize = drwav__data_chunk_size_riff(pWav->dataChunkDataSize);
-                    drwav__write_u32ne_to_le(pWav, dataChunkSize);
+                    if (drwav__write_u32ne_to_le(pWav, dataChunkSize) != sizeof(dataChunkSize)) {
+                        result = DRWAV_IO_ERROR;
+                    }
+                } else {
+                    result = DRWAV_IO_ERROR;
                 }
             } else {
                 /* The "RIFF" chunk size. */
                 if (pWav->onSeek(pWav->pUserData, 16, drwav_seek_origin_start)) {
                     drwav_uint64 riffChunkSize = drwav__riff_chunk_size_w64(pWav->dataChunkDataSize);
-                    drwav__write_u64ne_to_le(pWav, riffChunkSize);
+                    if (drwav__write_u64ne_to_le(pWav, riffChunkSize) != sizeof(riffChunkSize)) {
+                        result = DRWAV_IO_ERROR;
+                    }
+                } else {
+                    result = DRWAV_IO_ERROR;
                 }
 
                 /* The "data" chunk size. */
                 if (pWav->onSeek(pWav->pUserData, (int)pWav->dataChunkDataPos + 16, drwav_seek_origin_start)) {
                     drwav_uint64 dataChunkSize = drwav__data_chunk_size_w64(pWav->dataChunkDataSize);
-                    drwav__write_u64ne_to_le(pWav, dataChunkSize);
+                    if (drwav__write_u64ne_to_le(pWav, dataChunkSize) != sizeof(dataChunkSize)) {
+                        result = DRWAV_IO_ERROR;
+                    }
+                } else {
+                    result = DRWAV_IO_ERROR;
                 }
             }
         }
@@ -3411,7 +3429,9 @@ DRWAV_API drwav_result drwav_uninit(drwav* pWav)
     was used by looking at the onRead and onSeek callbacks.
     */
     if (pWav->onRead == drwav__on_read_stdio || pWav->onWrite == drwav__on_write_stdio) {
-        fclose((FILE*)pWav->pUserData);
+        if (fclose((FILE*)pWav->pUserData) != 0) {
+            result = DRWAV_IO_ERROR;
+        }
     }
 #endif
 

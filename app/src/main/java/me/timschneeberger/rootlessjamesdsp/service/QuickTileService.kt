@@ -1,11 +1,13 @@
 package me.timschneeberger.rootlessjamesdsp.service
 
 import android.app.PendingIntent
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import me.timschneeberger.rootlessjamesdsp.MainApplication
@@ -77,18 +79,26 @@ class QuickTileService : TileService(),
     }
 
     // Called when the user taps on your tile in an active or inactive state.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    @Suppress("DEPRECATION")
     override fun onClick() {
         super.onClick()
 
         val toggled = qsTile?.let { it.state != Tile.STATE_ACTIVE } ?: return
         toggleEnginePower(toggled) { intent ->
-            val pending = PendingIntent.getActivity(app, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+            val pending = PendingIntent.getActivity(
+                app,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
 
             // If projection permission request needs to be shown, collapse status bar
             if (isRootless() && app.mediaProjectionStartIntent == null && !hasProjectMediaAppOp() && !SdkCheck.isVanillaIceCream) {
-                if(SdkCheck.isUpsideDownCake)
+                if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
                     startActivityAndCollapse(pending)
                 else
+                    // The PendingIntent overload does not exist before Android 14.
                     startActivityAndCollapse(intent)
             }
             else

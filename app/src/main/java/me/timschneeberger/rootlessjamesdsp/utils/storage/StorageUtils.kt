@@ -7,6 +7,10 @@ import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.UUID
 
 
 object StorageUtils {
@@ -18,16 +22,41 @@ object StorageUtils {
             return null
         }
 
-        val destinationFile = File(targetDir + File.separatorChar + name)
+        val targetDirectory = File(targetDir)
+        if (!targetDirectory.mkdirs() && !targetDirectory.isDirectory) {
+            Timber.e("importFile: target directory could not be created")
+            return null
+        }
+
+        val destinationFile = File(targetDirectory, name)
+        val temporaryFile = File(targetDirectory, ".${name}.${UUID.randomUUID()}.part")
         try {
-            context.contentResolver.openInputStream(uri)?.use { ins ->
-                if(!createFileFromStream(ins, destinationFile))
-                    return null
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            inputStream.use { ins ->
+                if (!createFileFromStream(ins, temporaryFile)) return null
+            }
+            if (destinationFile.exists()) {
+                Files.move(
+                    temporaryFile.toPath(),
+                    destinationFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            } else {
+                try {
+                    Files.move(
+                        temporaryFile.toPath(),
+                        destinationFile.toPath(),
+                        StandardCopyOption.ATOMIC_MOVE
+                    )
+                } catch (_: AtomicMoveNotSupportedException) {
+                    Files.move(temporaryFile.toPath(), destinationFile.toPath())
+                }
             }
         } catch (ex: Exception) {
-            Timber.e(ex.message)
-            ex.printStackTrace()
+            Timber.e(ex, "Failed to import file")
             return null
+        } finally {
+            temporaryFile.delete()
         }
         return destinationFile
     }
@@ -42,7 +71,7 @@ object StorageUtils {
         }
     }
 
-    private fun createFileFromStream(ins: InputStream, destination: File?): Boolean {
+    private fun createFileFromStream(ins: InputStream, destination: File): Boolean {
         try {
             FileOutputStream(destination).use { os ->
                 val buffer = ByteArray(4096)
@@ -53,20 +82,40 @@ object StorageUtils {
                 os.flush()
             }
         } catch (ex: Exception) {
-            Timber.e(ex.message)
-            ex.printStackTrace()
+            Timber.e(ex, "Failed to copy imported file")
             return false
         }
         return true
     }
 
     fun queryName(context: Context, uri: Uri): String? {
-        val returnCursor = context.contentResolver.query(uri, null, null, null, null)
-        returnCursor ?: return null
-        val nameIndex: Int = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        returnCursor.moveToFirst()
-        val name: String = returnCursor.getString(nameIndex)
-        returnCursor.close()
-        return name
+        return try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex < 0 || !cursor.moveToFirst() || cursor.isNull(nameIndex)) {
+                    null
+                } else {
+                    safeDisplayName(cursor.getString(nameIndex))
+                }
+            }
+        } catch (ex: Exception) {
+            Timber.e(ex, "Failed to query imported file name")
+            null
+        }
     }
 }
+
+internal fun safeDisplayName(name: String): String? =
+    name.takeIf {
+        it.isNotBlank() &&
+                it != "." &&
+                it != ".." &&
+                !it.contains('\u0000') &&
+                File(it).name == it
+    }

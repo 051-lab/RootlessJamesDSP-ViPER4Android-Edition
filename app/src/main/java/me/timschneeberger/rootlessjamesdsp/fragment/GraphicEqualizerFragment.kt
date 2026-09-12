@@ -337,18 +337,10 @@ class GraphicEqualizerFragment : Fragment() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        // TODO workaround: discard changes
         if(editorActive)
             editorDiscard()
 
-        /*super.onSaveInstanceState(outState.apply {
-            putBundle(STATE_NODES, adapter.nodes.toBundle())
-            putSerializable(STATE_EDITOR_NODE_UUID, editorNodeUuid)
-            putSerializable(STATE_EDITOR_NODE_BACKUP, editorNodeBackup)
-            putBoolean(STATE_EDITOR_ACTIVE, editorActive)
-            putFloat(STATE_EDITOR_UI_FREQ_INPUT, binding.freqInput.value)
-            putFloat(STATE_EDITOR_UI_GAIN_INPUT, binding.gainInput.value)
-        })*/
+        super.onSaveInstanceState(outState)
     }
 
     companion object {

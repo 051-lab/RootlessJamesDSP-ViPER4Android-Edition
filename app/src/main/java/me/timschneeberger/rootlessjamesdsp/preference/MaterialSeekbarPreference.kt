@@ -23,7 +23,6 @@ import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-// TODO stepValue is broken in recyclerview!!!
 class MaterialSeekbarPreference : Preference {
     var mSeekBarValue/* synthetic access */ = 0f
     var mMin/* synthetic access */ = 0f
@@ -54,7 +53,7 @@ class MaterialSeekbarPreference : Preference {
      */
     private val mSeekBarChangeListener =
         Slider.OnChangeListener { slider, value, fromUser ->
-            if (fromUser && mUpdatesContinuously || !mTrackingTouch) {
+            if (fromUser && (mUpdatesContinuously || !mTrackingTouch)) {
                 syncValueInternal(slider)
             } else {
                 // We always want to update the text while the seekbar is being dragged
@@ -141,12 +140,11 @@ class MaterialSeekbarPreference : Preference {
     ) : this(context, null)
 
     private fun validateValue(value: Float): Float {
-        if (mSeekBarIncrement > 0 && !valueLandsOnTick(value)) {
-            val newValue = mSeekBarIncrement * ((value / mSeekBarIncrement).roundToInt())
+        val newValue = snapSliderValue(value, mMin, mMax, mSeekBarIncrement)
+        if (newValue != value) {
             Timber.w("setValueInternal: value corrected $value to $newValue")
-            return newValue
         }
-        return value
+        return newValue
     }
 
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
@@ -168,8 +166,6 @@ class MaterialSeekbarPreference : Preference {
 
         mSeekBar.clearOnChangeListeners()
         mSeekBar.clearOnSliderTouchListeners()
-        mSeekBar.addOnChangeListener(mSeekBarChangeListener)
-        mSeekBar.addOnSliderTouchListener(mSeekBarTouchListener)
         mSeekBar.valueFrom = mMin
         mSeekBar.valueTo = mMax
         // Ignore: If the increment is not zero, use that. Otherwise, use the default mKeyProgressIncrement
@@ -178,8 +174,15 @@ class MaterialSeekbarPreference : Preference {
         // calling setMax() since setMax() can change the increment value.
         mSeekBar.stepSize = mSeekBarIncrement
 
-        mSeekBar.value = validateValue(mSeekBarValue)
-        updateLabelValue(mSeekBarValue)
+        val normalizedValue = validateValue(mSeekBarValue)
+        if (normalizedValue != mSeekBarValue) {
+            mSeekBarValue = normalizedValue
+            persistFloat(normalizedValue)
+        }
+        mSeekBar.value = normalizedValue
+        mSeekBar.addOnChangeListener(mSeekBarChangeListener)
+        mSeekBar.addOnSliderTouchListener(mSeekBarTouchListener)
+        updateLabelValue(normalizedValue)
         mSeekBar.isEnabled = isEnabled
 
         this.setOnPreferenceClickListener {
@@ -245,6 +248,7 @@ class MaterialSeekbarPreference : Preference {
         }
         if (min != mMin) {
             mMin = min
+            validateIncrementForRange()
             notifyChanged()
         }
     }
@@ -268,8 +272,12 @@ class MaterialSeekbarPreference : Preference {
      * arrow key.
      */
     fun setSeekBarIncrement(seekBarIncrement: Float) {
-        if (seekBarIncrement != mSeekBarIncrement) {
-            mSeekBarIncrement = min(mMax - mMin, abs(seekBarIncrement))
+        val increment = compatibleSliderIncrement(mMin, mMax, seekBarIncrement)
+        if (increment != mSeekBarIncrement) {
+            if (seekBarIncrement != 0f && increment == 0f) {
+                Timber.w("Ignoring seek bar increment $seekBarIncrement: it does not evenly divide the configured range")
+            }
+            mSeekBarIncrement = increment
             notifyChanged()
         }
     }
@@ -295,7 +303,16 @@ class MaterialSeekbarPreference : Preference {
         }
         if (max != mMax) {
             mMax = max
+            validateIncrementForRange()
             notifyChanged()
+        }
+    }
+
+    private fun validateIncrementForRange() {
+        val increment = compatibleSliderIncrement(mMin, mMax, mSeekBarIncrement)
+        if (increment != mSeekBarIncrement) {
+            Timber.w("Disabling seek bar increment $mSeekBarIncrement: it does not evenly divide the configured range")
+            mSeekBarIncrement = increment
         }
     }
 
@@ -364,19 +381,7 @@ class MaterialSeekbarPreference : Preference {
     }
 
     private fun setValueInternal(_seekBarValue: Float, notifyChanged: Boolean) {
-        var seekBarValue = _seekBarValue
-        if (seekBarValue < mMin) {
-            seekBarValue = mMin
-        }
-        if (seekBarValue > mMax) {
-            seekBarValue = mMax
-        }
-
-        seekBarValue = validateValue(seekBarValue)
-        if (mSeekBarIncrement > 0 && !valueLandsOnTick(seekBarValue)) {
-            seekBarValue = mSeekBarIncrement * ((seekBarValue / mSeekBarIncrement).roundToInt())
-            Timber.w("setValueInternal: value corrected $_seekBarValue to $seekBarValue")
-        }
+        val seekBarValue = validateValue(_seekBarValue)
 
         if (seekBarValue != mSeekBarValue) {
             mSeekBarValue = seekBarValue
@@ -456,4 +461,26 @@ class MaterialSeekbarPreference : Preference {
         // If the result is a whole number, it means the value is a multiple of stepSize.
         return abs(result.roundToInt() - result) < 1.0E-4
     }
+}
+
+internal fun snapSliderValue(value: Float, min: Float, max: Float, increment: Float): Float {
+    val clamped = value.coerceIn(min, max)
+    if (increment <= 0f) return clamped
+
+    val steps = BigDecimal((clamped - min).toString())
+        .divide(BigDecimal(increment.toString()), MathContext.DECIMAL64)
+        .toDouble()
+        .roundToInt()
+    return (min + steps * increment).coerceIn(min, max)
+}
+
+internal fun compatibleSliderIncrement(min: Float, max: Float, requestedIncrement: Float): Float {
+    val range = max - min
+    val increment = min(range, abs(requestedIncrement))
+    if (range <= 0f || increment <= 0f) return 0f
+
+    val stepCount = BigDecimal(range.toString())
+        .divide(BigDecimal(increment.toString()), MathContext.DECIMAL64)
+        .toDouble()
+    return increment.takeIf { abs(stepCount.roundToInt() - stepCount) < 1.0E-4 } ?: 0f
 }
