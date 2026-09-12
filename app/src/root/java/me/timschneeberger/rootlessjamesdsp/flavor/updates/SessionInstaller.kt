@@ -12,6 +12,7 @@ import me.timschneeberger.rootlessjamesdsp.utils.SdkCheck
 import me.timschneeberger.rootlessjamesdsp.utils.sdkAbove
 import me.timschneeberger.rootlessjamesdsp.utils.storage.Cache
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /** Based on https://github.com/Iamlooker/Droid-ify/ licensed under GPLv3 */
 class SessionInstaller(private val context: Context) {
@@ -20,7 +21,6 @@ class SessionInstaller(private val context: Context) {
     private val intent = Intent(context, SessionInstallerService::class.java)
 
     companion object {
-        private var installerCallbacks = mutableListOf<PackageInstaller.SessionCallback>()
         private val flags = if (SdkCheck.isSnowCake) PendingIntent.FLAG_MUTABLE else 0
         private val sessionParams =
             PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
@@ -42,38 +42,46 @@ class SessionInstaller(private val context: Context) {
             override fun onActiveChanged(sessionId: Int, active: Boolean) {}
             override fun onProgressChanged(sessionId: Int, progress: Float) {}
             override fun onFinished(sessionId: Int, success: Boolean) {
-                if (sessionId == id) cont.resume(true)
-            }
-        }
-        installerCallbacks.add(installerCallback)
-
-        sessionInstaller.registerSessionCallback(
-            installerCallbacks.last(),
-            Handler(Looper.getMainLooper())
-        )
-
-        sessionInstaller.openSession(id).use { activeSession ->
-            val sizeBytes = cacheFile.length()
-            cacheFile.inputStream().use { fileStream ->
-                activeSession.openWrite(cacheFile.name, 0, sizeBytes).use { outputStream ->
-                    if (cont.isActive) {
-                        fileStream.copyTo(outputStream)
-                        activeSession.fsync(outputStream)
-                    }
+                if (sessionId == id && cont.isActive) {
+                    runCatching { sessionInstaller.unregisterSessionCallback(this) }
+                    cont.resume(success)
                 }
             }
+        }
 
-            val pendingIntent = PendingIntent.getService(context, id, intent, flags)
+        try {
+            sessionInstaller.registerSessionCallback(
+                installerCallback,
+                Handler(Looper.getMainLooper())
+            )
+            sessionInstaller.openSession(id).use { activeSession ->
+                val sizeBytes = cacheFile.length()
+                cacheFile.inputStream().use { fileStream ->
+                    activeSession.openWrite(cacheFile.name, 0, sizeBytes).use { outputStream ->
+                        if (cont.isActive) {
+                            fileStream.copyTo(outputStream)
+                            activeSession.fsync(outputStream)
+                        }
+                    }
+                }
 
-            if (cont.isActive) activeSession.commit(pendingIntent.intentSender)
+                val pendingIntent = PendingIntent.getService(context, id, intent, flags)
+
+                if (cont.isActive) activeSession.commit(pendingIntent.intentSender)
+            }
+        } catch (e: Exception) {
+            runCatching { sessionInstaller.unregisterSessionCallback(installerCallback) }
+            runCatching { sessionInstaller.abandonSession(id) }
+            if (cont.isActive)
+                cont.resumeWithException(e)
         }
         cont.invokeOnCancellation {
-            sessionInstaller.abandonSession(id)
+            runCatching { sessionInstaller.unregisterSessionCallback(installerCallback) }
+            runCatching { sessionInstaller.abandonSession(id) }
         }
     }
 
     fun cleanup() {
-        installerCallbacks.forEach { sessionInstaller.unregisterSessionCallback(it) }
         sessionInstaller.mySessions.forEach { sessionInstaller.abandonSession(it.sessionId) }
     }
 }

@@ -39,8 +39,13 @@ class FileLibraryPreference(context: Context, attrs: AttributeSet?) :
         }
 
     init {
-        with(context.obtainStyledAttributes(attrs, R.styleable.FileLibraryPreference)) {
-            type = getString(R.styleable.FileLibraryPreference_type) ?: "unknown"
+        val styledAttributes = context.obtainStyledAttributes(attrs, R.styleable.FileLibraryPreference)
+        try {
+            with(styledAttributes) {
+                type = getString(R.styleable.FileLibraryPreference_type) ?: "unknown"
+            }
+        } finally {
+            styledAttributes.recycle()
         }
     }
 
@@ -129,16 +134,16 @@ class FileLibraryPreference(context: Context, attrs: AttributeSet?) :
         )
 
         fun hasIrsExtension(it: String): Boolean {
-            return types["Convolver"]!!.any { ext -> it.endsWith(ext) }
+            return types["Convolver"]!!.any { ext -> it.endsWith(ext, ignoreCase = true) }
         }
         fun hasLiveprogExtension(it: String): Boolean {
-            return types["Liveprog"]!!.any { ext -> it.endsWith(ext) }
+            return types["Liveprog"]!!.any { ext -> it.endsWith(ext, ignoreCase = true) }
         }
         fun hasVdcExtension(it: String): Boolean {
-            return types["DDC"]!!.any { ext -> it.endsWith(ext) }
+            return types["DDC"]!!.any { ext -> it.endsWith(ext, ignoreCase = true) }
         }
         fun hasPresetExtension(it: String): Boolean {
-            return types["Presets"]!!.any { ext -> it.endsWith(ext) }
+            return types["Presets"]!!.any { ext -> it.endsWith(ext, ignoreCase = true) }
         }
 
 

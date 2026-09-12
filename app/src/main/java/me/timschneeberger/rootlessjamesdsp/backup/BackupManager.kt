@@ -111,7 +111,7 @@ class BackupManager(private val context: Context): KoinComponent {
         context.contentResolver.openInputStream(uri)!!.source().gzip().buffer().inputStream().use { stream ->
             val targetFolder = File(context.cacheDir, "restore")
             val metadata = Tar.Reader(stream, ::isKnownFile).extract(targetFolder)
-            if(metadata == null) {
+            if(metadata == null || !isBackupMetadata(metadata)) {
                 targetFolder.deleteRecursively()
                 throw UnsupportedOperationException(context.getString(R.string.backup_restore_error_format))
             }
@@ -148,7 +148,7 @@ class BackupManager(private val context: Context): KoinComponent {
                         true
                     )
                 }
-                else if(file.isDirectory && FileLibraryPreference.types.any { file.name.startsWith(it.key) }) {
+                else if(file.isDirectory && FileLibraryPreference.types.containsKey(file.name)) {
                     file.copyRecursively(File(context.getExternalFilesDir(null)!!.absolutePath + "/" + file.name), true)
                 }
             }
@@ -169,11 +169,23 @@ class BackupManager(private val context: Context): KoinComponent {
         private const val META_HAS_DEVICE_PROFILES = "has_device_profiles"
         const val META_IS_BACKUP = "is_backup"
 
-        private fun isKnownFile(name: String): Boolean {
-            return (name.contains("dsp_") && name.endsWith(".xml")) ||
-                    name.startsWith("profiles/") ||
-                    FileLibraryPreference.types.any { name.contains(it.key) && it.value.any { ext -> name.endsWith(ext) } }
+        internal fun isKnownFile(name: String): Boolean {
+            if (name.split('/').any { it.isBlank() || it == "." || it == ".." })
+                return false
+
+            return (name.startsWith("shared_prefs/dsp_") &&
+                    !name.removePrefix("shared_prefs/").contains('/') &&
+                    name.endsWith(".xml")) ||
+                    (name.startsWith("profiles/") && name.length > "profiles/".length) ||
+                    FileLibraryPreference.types.any { (directory, extensions) ->
+                        name.startsWith("$directory/") &&
+                                !name.removePrefix("$directory/").contains('/') &&
+                                extensions.any { ext -> name.endsWith(ext, ignoreCase = true) }
+                    }
         }
+
+        internal fun isBackupMetadata(metadata: Map<String, String>): Boolean =
+            metadata[META_IS_BACKUP]?.toBoolean() == true
 
         fun getBackupFilename(): String {
             val date = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(Date())

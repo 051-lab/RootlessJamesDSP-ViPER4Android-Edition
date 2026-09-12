@@ -52,8 +52,9 @@ class AutoEqClient(val context: Context, callTimeout: Long = 10, customBaseUrl: 
         val call = service.queryProfiles(query)
         call.enqueue(object : Callback<Array<AeqSearchResult>> {
             override fun onResponse(call: Call<Array<AeqSearchResult>>, response: Response<Array<AeqSearchResult>>) {
-                if (response.code() == 200) {
-                    onResponse.invoke(response.body()!!, response.headers().get(HEADER_PARTIAL_RESULT) == "1")
+                val body = response.body()
+                if (response.code() == 200 && body != null) {
+                    onResponse.invoke(body, response.headers().get(HEADER_PARTIAL_RESULT) == "1")
                 }
                 else {
                     onFailure?.invoke(context.getString(R.string.geq_api_network_error,
@@ -74,7 +75,8 @@ class AutoEqClient(val context: Context, callTimeout: Long = 10, customBaseUrl: 
         val call = service.getProfile(id)
         call.enqueue(object : Callback<String> {
             override fun onResponse(call: Call<String>, response: Response<String>) {
-                if (response.code() == 200) {
+                val body = response.body()
+                if (response.code() == 200 && body != null) {
                     val result = AeqSearchResult(
                         response.headers().get(HEADER_PROFILE_NAME),
                         response.headers().get(HEADER_PROFILE_SOURCE),
@@ -82,7 +84,7 @@ class AutoEqClient(val context: Context, callTimeout: Long = 10, customBaseUrl: 
                         response.headers().get(HEADER_PROFILE_ID)?.toLongOrNull()
                     )
 
-                    onResponse.invoke(response.body()!!, result)
+                    onResponse.invoke(body, result)
                 }
                 else {
                     onFailure?.invoke(context.getString(R.string.geq_api_network_error,

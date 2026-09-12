@@ -1,7 +1,6 @@
 package me.timschneeberger.rootlessjamesdsp.utils.storage
 
 import android.content.Context
-import android.system.ErrnoException
 import org.kamranzafar.jtar.TarEntry
 import org.kamranzafar.jtar.TarInputStream
 import org.kamranzafar.jtar.TarOutputStream
@@ -21,6 +20,7 @@ import java.io.OutputStream
 
 object Tar {
     private const val FILE_METADATA = "metadata"
+    private const val MAX_METADATA_SIZE_BYTES = 64 * 1024
 
     /**
      * Create tar composer
@@ -60,16 +60,19 @@ object Tar {
         }
 
         override fun close() {
-            add(
-                File(context.cacheDir, FILE_METADATA).apply {
-                    writeText(
-                        metadata
-                            .map { "${it.key}=${it.value}" }
-                            .joinToString("\n")
-                    )
-                }
-            )
-            stream.close()
+            var metadataFile: File? = null
+            try {
+                metadataFile = File.createTempFile("archive-metadata-", ".tmp", context.cacheDir)
+                metadataFile.writeText(
+                    metadata
+                        .map { "${it.key}=${it.value}" }
+                        .joinToString("\n")
+                )
+                add(metadataFile, FILE_METADATA)
+            } finally {
+                metadataFile?.delete()
+                stream.close()
+            }
         }
     }
 
@@ -100,7 +103,10 @@ object Tar {
 
             var knownCount = 0
             try {
-                process { _, _ -> knownCount++ }
+                process { _, name ->
+                    if (name != FILE_METADATA)
+                        knownCount++
+                }
             }
             catch(ex: Exception) {
                 Timber.e("Validation failed due to exception")
@@ -117,39 +123,51 @@ object Tar {
         }
 
         fun extract(targetFolder: File) : Map<String, String>? {
-            if(targetFolder.exists())
-                targetFolder.delete()
-            targetFolder.mkdirs()
+            if (targetFolder.exists() && !targetFolder.deleteRecursively()) {
+                Timber.e("Failed to clear extraction directory")
+                return null
+            }
+            if (!targetFolder.mkdirs() && !targetFolder.isDirectory) {
+                Timber.e("Failed to create extraction directory")
+                return null
+            }
 
             val metadataBytes = ByteArrayOutputStream()
             try {
+                val canonicalTarget = targetFolder.canonicalFile
                 process { stream, name ->
                     var count: Int
                     val data = ByteArray(2048)
-                    // create subdirectories in archive entry name
-                    File(targetFolder.absolutePath + "/" + name).parentFile?.mkdirs()
-                    BufferedOutputStream(FileOutputStream(
-                        targetFolder.absolutePath + "/" + name
-                    )).use { dest ->
+
+                    if (name == FILE_METADATA) {
                         while (stream.read(data).also { count = it } != -1) {
-                            if (name == FILE_METADATA)
-                                metadataBytes.write(data, 0, count)
-                            else
-                                dest.write(data, 0, count)
+                            if (metadataBytes.size() > MAX_METADATA_SIZE_BYTES - count) {
+                                throw IOException("Archive metadata exceeds the size limit")
+                            }
+                            metadataBytes.write(data, 0, count)
+                        }
+                        return@process
+                    }
+
+                    val output = containedArchiveEntry(canonicalTarget, name)
+                        ?: throw IOException("Archive entry escapes extraction directory: $name")
+                    val parent = output.parentFile
+                    if (parent != null && !parent.mkdirs() && !parent.isDirectory) {
+                        throw IOException("Failed to create directory for archive entry: $name")
+                    }
+                    BufferedOutputStream(FileOutputStream(output)).use { dest ->
+                        while (stream.read(data).also { count = it } != -1) {
+                            dest.write(data, 0, count)
                         }
                         dest.flush()
                     }
                 }
                 metadataBytes.flush()
             }
-            catch(ex: ErrnoException) {
-                Timber.e("Extraction failed; errno=${ex.errno}")
-                Timber.w(ex)
-                return null
-            }
-            catch(ex: IOException) {
+            catch(ex: Exception) {
                 Timber.e("Extraction failed")
                 Timber.w(ex)
+                targetFolder.deleteRecursively()
                 return null
             }
 
@@ -161,6 +179,23 @@ object Tar {
         }
     }
 
+}
+
+/** Resolves an archive entry only when it is a relative child of [targetFolder]. */
+internal fun containedArchiveEntry(targetFolder: File, entryName: String): File? {
+    if (entryName.isBlank() || File(entryName).isAbsolute ||
+        entryName.split('/').any { it.isBlank() || it == "." || it == ".." }) return null
+
+    return try {
+        val canonicalTarget = targetFolder.canonicalFile
+        val candidate = File(canonicalTarget, entryName).canonicalFile
+        val targetPrefix = canonicalTarget.path + File.separator
+        candidate.takeIf { it.path.startsWith(targetPrefix) }
+    } catch (_: IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    }
 }
 
 /**

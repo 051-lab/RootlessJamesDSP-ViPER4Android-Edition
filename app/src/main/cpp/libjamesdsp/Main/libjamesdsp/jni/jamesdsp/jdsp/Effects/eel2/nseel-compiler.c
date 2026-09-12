@@ -2572,14 +2572,14 @@ static float NSEEL_CGEN_CALL _eel_base64_encode(void *opaque, float *destination
 	{
 		compileContext *c = (compileContext*)opaque;
 		s_str *dest = (s_str*)GetStringForIndex(c->region_context, *destination, 1);
-		if (dest)
-			s_str_destroy(dest);
 		s_str *srcClass = (s_str*)GetStringForIndex(c->region_context, *source, 1);
+		if (!dest || !srcClass)
+			return 0;
 		size_t len = (size_t)(*maxlen + NSEEL_CLOSEFACTOR);
 		if (len > s_str_capacity(srcClass))
 			return -1;
 		const char *src = s_str_c_str(srcClass);
-		if (dest && src)
+		if (src)
 		{
 			unsigned char *out, *pos;
 			const unsigned char *end, *in;
@@ -2593,8 +2593,8 @@ static float NSEEL_CGEN_CALL _eel_base64_encode(void *opaque, float *destination
 			out = (unsigned char*)malloc(olen);
 			if (out == 0)
 				return 0;
-			end = src + len;
-			in = src;
+			end = (const unsigned char*)src + len;
+			in = (const unsigned char*)src;
 			pos = out;
 			line_len = 0;
 			while (end - in >= 3)
@@ -2630,8 +2630,12 @@ static float NSEEL_CGEN_CALL _eel_base64_encode(void *opaque, float *destination
 				*pos++ = '\n';
 			*pos = '\0';
 			size_t out_len = pos - out;
-			*dest = s_str_create_from_c_str(out);
+			s_str result = s_str_create_from_c_str((const char*)out);
 			free(out);
+			if (!result)
+				return 0;
+			s_str_destroy(dest);
+			*dest = result;
 			return (float)out_len;
 		}
 	}
@@ -2651,14 +2655,27 @@ static float NSEEL_CGEN_CALL _eel_base64_encodeBinaryToTextFile(void *opaque, fl
 			FILE *textFile = fopen(src, "rb");
 			if (textFile)
 			{
-				fseek(textFile, 0, SEEK_END);
-				length = ftell(textFile);
-				fseek(textFile, 0, SEEK_SET);
-				buffer = (unsigned char*)malloc(length + 1);
-				if (buffer)
-					fread((void*)buffer, 1, length, textFile);
+				if (fseek(textFile, 0, SEEK_END) != 0 ||
+					(length = ftell(textFile)) < 0 ||
+					fseek(textFile, 0, SEEK_SET) != 0)
+				{
+					fclose(textFile);
+					return 0;
+				}
+				buffer = (unsigned char*)malloc((size_t)length + 1);
+				if (!buffer)
+				{
+					fclose(textFile);
+					return 0;
+				}
+				size_t bytesRead = fread(buffer, 1, (size_t)length, textFile);
 				fclose(textFile);
-				buffer[length] = '\0';
+				if (bytesRead != (size_t)length)
+				{
+					free(buffer);
+					return 0;
+				}
+				buffer[bytesRead] = '\0';
 			}
 			size_t outLen = 0;
 			unsigned char *out;
@@ -2666,13 +2683,18 @@ static float NSEEL_CGEN_CALL _eel_base64_encodeBinaryToTextFile(void *opaque, fl
 			{
 				out = base64_encode(buffer, length, &outLen);
 				free(buffer);
+				if (!out)
+					return 0;
 				FILE *fp = fopen(dest, "w");
-				if (fp)
-				{
-					fwrite(out, 1, outLen, fp);
-					fclose(fp);
+				if (!fp) {
+					free(out);
+					return 0;
 				}
+				size_t bytesWritten = fwrite(out, 1, outLen, fp);
+				int closeResult = fclose(fp);
 				free(out);
+				if (bytesWritten != outLen || closeResult != 0)
+					return 0;
 			}
 			return (float)outLen;
 		}
@@ -2685,14 +2707,14 @@ static float NSEEL_CGEN_CALL _eel_base64_decode(void *opaque, float *destination
 	{
 		compileContext *c = (compileContext*)opaque;
 		s_str *dest = (s_str*)GetStringForIndex(c->region_context, *destination, 1);
-		if (dest)
-			s_str_destroy(dest);
 		s_str *srcClass = (s_str*)GetStringForIndex(c->region_context, *source, 1);
+		if (!dest || !srcClass)
+			return 0;
 		size_t len = (size_t)(*maxlen + NSEEL_CLOSEFACTOR);
 		if (len > s_str_capacity(srcClass))
 			return -1;
 		const char *src = s_str_c_str(srcClass);
-		if (dest && src)
+		if (src)
 		{
 			unsigned char dtable[256], *out, *pos, block[4], tmp;
 			size_t i, count, olen;
@@ -2703,7 +2725,7 @@ static float NSEEL_CGEN_CALL _eel_base64_decode(void *opaque, float *destination
 			dtable['='] = 0;
 			count = 0;
 			for (i = 0; i < len; i++)
-				if (dtable[src[i]] != 0x80)
+				if (dtable[(unsigned char)src[i]] != 0x80)
 					count++;
 			if (count == 0 || count % 4)
 				return 0;
@@ -2714,7 +2736,7 @@ static float NSEEL_CGEN_CALL _eel_base64_decode(void *opaque, float *destination
 			count = 0;
 			for (i = 0; i < len; i++)
 			{
-				tmp = dtable[src[i]];
+				tmp = dtable[(unsigned char)src[i]];
 				if (tmp == 0x80)
 					continue;
 				if (src[i] == '=')
@@ -2744,8 +2766,12 @@ static float NSEEL_CGEN_CALL _eel_base64_decode(void *opaque, float *destination
 				}
 			}
 			size_t out_len = pos - out;
-			*dest = s_str_create_from_c_str_0Inc(out, out_len);
+			s_str result = s_str_create_from_c_str_0Inc((const char*)out, out_len);
 			free(out);
+			if (!result)
+				return 0;
+			s_str_destroy(dest);
+			*dest = result;
 			return (float)out_len;
 		}
 	}
@@ -2765,14 +2791,27 @@ static float NSEEL_CGEN_CALL _eel_base64_decodeBinaryToTextFile(void *opaque, fl
 			FILE *textFile = fopen(src, "r");
 			if (textFile)
 			{
-				fseek(textFile, 0, SEEK_END);
-				length = ftell(textFile);
-				fseek(textFile, 0, SEEK_SET);
-				buffer = (unsigned char*)malloc(length + 1);
-				if (buffer)
-					fread(buffer, 1, length, textFile);
+				if (fseek(textFile, 0, SEEK_END) != 0 ||
+					(length = ftell(textFile)) < 0 ||
+					fseek(textFile, 0, SEEK_SET) != 0)
+				{
+					fclose(textFile);
+					return 0;
+				}
+				buffer = (unsigned char*)malloc((size_t)length + 1);
+				if (!buffer)
+				{
+					fclose(textFile);
+					return 0;
+				}
+				size_t bytesRead = fread(buffer, 1, (size_t)length, textFile);
 				fclose(textFile);
-				buffer[length] = '\0';
+				if (bytesRead != (size_t)length)
+				{
+					free(buffer);
+					return 0;
+				}
+				buffer[bytesRead] = '\0';
 			}
 			size_t outLen = 0;
 			unsigned char *out;
@@ -2780,13 +2819,18 @@ static float NSEEL_CGEN_CALL _eel_base64_decodeBinaryToTextFile(void *opaque, fl
 			{
 				out = base64_decode(buffer, length, &outLen);
 				free(buffer);
+				if (!out)
+					return 0;
 				FILE *fp = fopen(dest, "wb");
-				if (fp)
-				{
-					fwrite(out, 1, outLen, fp);
-					fclose(fp);
+				if (!fp) {
+					free(out);
+					return 0;
 				}
+				size_t bytesWritten = fwrite(out, 1, outLen, fp);
+				int closeResult = fclose(fp);
 				free(out);
+				if (bytesWritten != outLen || closeResult != 0)
+					return 0;
 			}
 			return (float)outLen;
 		}
@@ -4301,20 +4345,62 @@ static float NSEEL_CGEN_CALL _eel_peakFinder(void *opaque, INT_PTR num_param, fl
 	uint32_t maximaMinima = (uint32_t)(*parms[3] + NSEEL_CLOSEFACTOR);
 	return (float)peakfinder(n, input, sel, maximaMinima, output);
 }
+static int _eel_floatToUint32(float value, uint32_t *result)
+{
+	double adjusted = (double)value + NSEEL_CLOSEFACTOR;
+	if (!isfinite(value) || value < 0 || adjusted > (double)UINT32_MAX)
+		return 0;
+	*result = (uint32_t)adjusted;
+	return 1;
+}
+static int _eel_floatToUint64(float value, uint64_t *result)
+{
+	long double adjusted = (long double)value + NSEEL_CLOSEFACTOR;
+	if (!isfinite(value) || value < 0 || adjusted > (long double)UINT64_MAX)
+		return 0;
+	*result = (uint64_t)adjusted;
+	return 1;
+}
 static float NSEEL_CGEN_CALL _eel_writeWavFile(void *opaque, INT_PTR num_param, float **parms)
 {
+	if (!opaque || num_param < 4)
+		return -1;
 	compileContext *c = (compileContext*)opaque;
 	float *blocks = c->ram_state;
 	const char *filename = (const char*)GetStringForIndex(c->region_context, *parms[0], 0);
-	uint32_t channels = (uint32_t)(*parms[1] + NSEEL_CLOSEFACTOR);
-	uint32_t fs = (uint32_t)(*parms[2] + NSEEL_CLOSEFACTOR);
-	uint64_t frameCount = (uint64_t)(*parms[3] + NSEEL_CLOSEFACTOR);
-	if ((num_param - 4) < (int32_t)channels)
+	uint32_t channels, fs;
+	uint64_t frameCount;
+	if (!filename || !_eel_floatToUint32(*parms[1], &channels) ||
+		!_eel_floatToUint32(*parms[2], &fs) || !_eel_floatToUint64(*parms[3], &frameCount) ||
+		channels == 0 || fs == 0 || channels > (uint32_t)(num_param - 4) ||
+		frameCount > SIZE_MAX / sizeof(float) / channels)
 		return -1;
-	float *signal = (float*)malloc((size_t)(channels * frameCount * sizeof(float)));
+	size_t signalSize = (size_t)(channels * frameCount) * sizeof(float);
+	float *signal = (float*)malloc(signalSize > 0 ? signalSize : 1);
 	float **ptr = (float**)malloc(channels * sizeof(float*));
+	if (!signal || !ptr)
+	{
+		free(signal);
+		free(ptr);
+		return -1;
+	}
 	for (uint32_t i = 0; i < channels; i++)
-		ptr[i] = __NSEEL_RAMAlloc(blocks, (uint64_t)(uint32_t)(*parms[i + 4] + NSEEL_CLOSEFACTOR));
+	{
+		uint32_t offset;
+		if (!_eel_floatToUint32(*parms[i + 4], &offset))
+		{
+			free(signal);
+			free(ptr);
+			return -1;
+		}
+		ptr[i] = __NSEEL_RAMAlloc(blocks, offset);
+		if (!ptr[i])
+		{
+			free(signal);
+			free(ptr);
+			return -1;
+		}
+	}
 	channel_join(ptr, channels, signal, frameCount);
 	drwav pWav;
 	drwav_data_format format;
@@ -4323,27 +4409,58 @@ static float NSEEL_CGEN_CALL _eel_writeWavFile(void *opaque, INT_PTR num_param, 
 	format.channels = channels;
 	format.sampleRate = fs;
 	format.bitsPerSample = 32;
-	uint32_t fail = drwav_init_file_write(&pWav, filename, &format, 0);
+	if (!drwav_init_file_write(&pWav, filename, &format, 0))
+	{
+		free(signal);
+		free(ptr);
+		return 0;
+	}
 	drwav_uint64 framesWritten = drwav_write_pcm_frames(&pWav, frameCount, signal);
-	drwav_uninit(&pWav);
+	drwav_result finalizeResult = drwav_uninit(&pWav);
 	free(signal);
 	free(ptr);
-	return 1;
+	return framesWritten == frameCount && finalizeResult == DRWAV_SUCCESS ? 1 : 0;
 }
 static float NSEEL_CGEN_CALL _eel_writeWavMemory(void *opaque, INT_PTR num_param, float **parms)
 {
+	if (!opaque || num_param < 4)
+		return -1;
 	compileContext *c = (compileContext*)opaque;
 	float *blocks = c->ram_state;
 	s_str *dest = (s_str*)GetStringForIndex(c->region_context, *parms[0], 1);
-	uint32_t channels = (uint32_t)(*parms[1] + NSEEL_CLOSEFACTOR);
-	uint32_t fs = (uint32_t)(*parms[2] + NSEEL_CLOSEFACTOR);
-	uint64_t frameCount = (uint64_t)(*parms[3] + NSEEL_CLOSEFACTOR);
-	if ((num_param - 4) < (int32_t)channels)
+	uint32_t channels, fs;
+	uint64_t frameCount;
+	if (!dest || !_eel_floatToUint32(*parms[1], &channels) ||
+		!_eel_floatToUint32(*parms[2], &fs) || !_eel_floatToUint64(*parms[3], &frameCount) ||
+		channels == 0 || fs == 0 || channels > (uint32_t)(num_param - 4) ||
+		frameCount > SIZE_MAX / sizeof(float) / channels)
 		return -1;
-	float *signal = (float*)malloc((size_t)(channels * frameCount * sizeof(float)));
+	size_t signalSize = (size_t)(channels * frameCount) * sizeof(float);
+	float *signal = (float*)malloc(signalSize > 0 ? signalSize : 1);
 	float **ptr = (float**)malloc(channels * sizeof(float*));
+	if (!signal || !ptr)
+	{
+		free(signal);
+		free(ptr);
+		return -1;
+	}
 	for (uint32_t i = 0; i < channels; i++)
-		ptr[i] = __NSEEL_RAMAlloc(blocks, (uint64_t)(uint32_t)(*parms[i + 4] + NSEEL_CLOSEFACTOR));
+	{
+		uint32_t offset;
+		if (!_eel_floatToUint32(*parms[i + 4], &offset))
+		{
+			free(signal);
+			free(ptr);
+			return -1;
+		}
+		ptr[i] = __NSEEL_RAMAlloc(blocks, offset);
+		if (!ptr[i])
+		{
+			free(signal);
+			free(ptr);
+			return -1;
+		}
+	}
 	channel_join(ptr, channels, signal, frameCount);
 	free(ptr);
 	drwav pWav;
@@ -4353,19 +4470,32 @@ static float NSEEL_CGEN_CALL _eel_writeWavMemory(void *opaque, INT_PTR num_param
 	format.channels = channels;
 	format.sampleRate = fs;
 	format.bitsPerSample = 32;
-	size_t blkSize;
-	void *memoryBlk;
-	uint32_t fail = drwav_init_memory_write(&pWav, &memoryBlk, &blkSize, &format, 0);
+	size_t blkSize = 0;
+	void *memoryBlk = NULL;
+	if (!drwav_init_memory_write(&pWav, &memoryBlk, &blkSize, &format, 0))
+	{
+		free(signal);
+		return 0;
+	}
 	drwav_uint64 framesWritten = drwav_write_pcm_frames(&pWav, frameCount, signal);
-	drwav_uninit(&pWav);
+	drwav_result finalizeResult = drwav_uninit(&pWav);
 	free(signal);
+	if (framesWritten != frameCount || finalizeResult != DRWAV_SUCCESS)
+	{
+		free(memoryBlk);
+		return 0;
+	}
 	size_t outLen;
 	unsigned char *base64String = base64_encode((unsigned char*)memoryBlk, blkSize, &outLen);
 	free(memoryBlk);
-	if (dest)
-		s_str_destroy(dest);
-	*dest = s_str_create_from_c_str(base64String);
+	if (!base64String)
+		return 0;
+	s_str result = s_str_create_from_c_str((const char*)base64String);
 	free(base64String);
+	if (!result)
+		return 0;
+	s_str_destroy(dest);
+	*dest = result;
 	return 1;
 }
 static float NSEEL_CGEN_CALL _eel_listSystemVariable(void *opaque, INT_PTR num_param, float **parms)

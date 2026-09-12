@@ -35,8 +35,13 @@ open class DropDownPreference(
     var isStatic: Boolean = false
 
     init {
-        with(context.obtainStyledAttributes(attrs, R.styleable.DropDownPreference)) {
-            isStatic = getBoolean(R.styleable.DropDownPreference_isStatic, false)
+        val styledAttributes = context.obtainStyledAttributes(attrs, R.styleable.DropDownPreference)
+        try {
+            with(styledAttributes) {
+                isStatic = getBoolean(R.styleable.DropDownPreference_isStatic, false)
+            }
+        } finally {
+            styledAttributes.recycle()
         }
     }
 
