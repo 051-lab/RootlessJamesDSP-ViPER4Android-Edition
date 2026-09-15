@@ -8133,7 +8133,7 @@ float *nseel_int_register_var(compileContext *ctx, const char *name, int32_t isR
 		}
 		ctx->varTable_numBlocks++;
 		ctx->varTable_Values[wb] = (float *)newCtxDataBlock(sizeof(float)*NSEEL_VARS_PER_BLOCK, 8);
-		ctx->varTable_Names[wb] = (char **)newCtxDataBlock(sizeof(char *)*NSEEL_VARS_PER_BLOCK, 1);
+		ctx->varTable_Names[wb] = (char **)newCtxDataBlock(sizeof(char *)*NSEEL_VARS_PER_BLOCK, _Alignof(char *));
 		if (ctx->varTable_Values[wb])
 		{
 			memset(ctx->varTable_Values[wb], 0, sizeof(float)*NSEEL_VARS_PER_BLOCK);

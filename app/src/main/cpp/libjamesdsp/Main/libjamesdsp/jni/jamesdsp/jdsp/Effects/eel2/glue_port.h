@@ -418,8 +418,9 @@ static void GLUE_CALL_CODE(INT_PTR bp, INT_PTR cp, INT_PTR rt)
 #define fp_push(x) *++_fpstacktop=(x)
 #define fp_pop() (*_fpstacktop--)
 #define fp_rewind(x) (_fpstacktop -= (x))
-  float fpstack[GLUE_MAX_FPSTACK_SIZE];
-  float *_fpstacktop=fpstack-1;
+  /* Reserve an empty-stack sentinel instead of forming a pointer before the array. */
+  float fpstack[GLUE_MAX_FPSTACK_SIZE + 1];
+  float *_fpstacktop=fpstack;
   for (;;)
   {
     EEL_BC_TYPE inst = *(EEL_BC_TYPE *)iptr;
