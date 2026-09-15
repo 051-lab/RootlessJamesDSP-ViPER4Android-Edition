@@ -90,7 +90,8 @@ s_str s_str_create_from_c_str_0Inc(const char *const c_str_ptr, const size_t len
 		if (new_str != NULL) {
 			access_struct(new_str).capacity = length + 1;
 			access_struct(new_str).size = length + 1;
-			memcpy(access_struct(new_str).string, c_str_ptr, sizeof(char) * (length + 1));
+			memcpy(access_struct(new_str).string, c_str_ptr, length);
+			access_struct(new_str).string[length] = '\0';
 		}
 	}
 	return new_str;

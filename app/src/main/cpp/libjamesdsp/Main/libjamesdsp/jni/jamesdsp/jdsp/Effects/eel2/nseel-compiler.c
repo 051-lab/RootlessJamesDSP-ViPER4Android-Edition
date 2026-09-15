@@ -4356,7 +4356,8 @@ static int _eel_floatToUint32(float value, uint32_t *result)
 static int _eel_floatToUint64(float value, uint64_t *result)
 {
 	long double adjusted = (long double)value + NSEEL_CLOSEFACTOR;
-	if (!isfinite(value) || value < 0 || adjusted > (long double)UINT64_MAX)
+	/* The exclusive power-of-two bound stays exact with 64-bit long double. */
+	if (!isfinite(value) || value < 0 || adjusted >= 0x1p64L)
 		return 0;
 	*result = (uint64_t)adjusted;
 	return 1;
@@ -4387,7 +4388,8 @@ static float NSEEL_CGEN_CALL _eel_writeWavFile(void *opaque, INT_PTR num_param, 
 	for (uint32_t i = 0; i < channels; i++)
 	{
 		uint32_t offset;
-		if (!_eel_floatToUint32(*parms[i + 4], &offset))
+		if (!_eel_floatToUint32(*parms[i + 4], &offset) ||
+			offset >= NSEEL_RAM_ITEMSPERBLOCK || frameCount > NSEEL_RAM_ITEMSPERBLOCK - offset)
 		{
 			free(signal);
 			free(ptr);
@@ -4447,7 +4449,8 @@ static float NSEEL_CGEN_CALL _eel_writeWavMemory(void *opaque, INT_PTR num_param
 	for (uint32_t i = 0; i < channels; i++)
 	{
 		uint32_t offset;
-		if (!_eel_floatToUint32(*parms[i + 4], &offset))
+		if (!_eel_floatToUint32(*parms[i + 4], &offset) ||
+			offset >= NSEEL_RAM_ITEMSPERBLOCK || frameCount > NSEEL_RAM_ITEMSPERBLOCK - offset)
 		{
 			free(signal);
 			free(ptr);
