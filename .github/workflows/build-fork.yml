@@ -1,9 +1,9 @@
 name: Build fork APK
 on:
   push:
-    branches: [ master, viper-extras ]
+    branches: [ main, master, viper-extras ]
   pull_request:
-    branches: [ master ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -17,6 +17,8 @@ jobs:
           distribution: adopt
       - name: Run JVM tests
         run: ./gradlew testRootlessFdroidDebugUnitTest --no-daemon
+      - name: Run native regression checks
+        run: sh tests/native/run.sh
       - name: Build rootless preview APK (FOSS, debug-signed)
         run: ./gradlew assembleRootlessFdroidDebug --no-daemon
       - name: Upload APK
