@@ -25,6 +25,15 @@ class TarExtractionTest {
     }
 
     @Test
+    fun metadataOnlyBackupCannotReachDestructiveRestore() {
+        val archive = archiveOf("metadata" to "is_backup=true")
+        val target = tmp.newFolder("restore")
+
+        assertNull(Tar.Reader(ByteArrayInputStream(archive)).extract(target))
+        assertFalse(target.exists())
+    }
+
+    @Test
     fun traversalEntryIsRejectedWithoutWritingOutsideTarget() {
         val archive = archiveOf("../escaped.txt" to "not safe")
         val target = tmp.newFolder("target")

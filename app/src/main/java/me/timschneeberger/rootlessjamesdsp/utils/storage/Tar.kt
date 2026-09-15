@@ -133,6 +133,7 @@ object Tar {
             }
 
             val metadataBytes = ByteArrayOutputStream()
+            var payloadCount = 0
             try {
                 val canonicalTarget = targetFolder.canonicalFile
                 process { stream, name ->
@@ -161,7 +162,9 @@ object Tar {
                         }
                         dest.flush()
                     }
+                    payloadCount++
                 }
+                if (payloadCount == 0) throw IOException("Archive contains no payload")
                 metadataBytes.flush()
             }
             catch(ex: Exception) {
