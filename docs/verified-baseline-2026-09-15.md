@@ -1,5 +1,9 @@
 # Baseline validation and LiveProg comparison
 
+This is the initial audit snapshot. See
+[baseline closure and lifecycle investigation](liveprog-lifecycle-2026-09-15.md)
+for subsequent commits, lint provenance and newly exposed native acceptance gaps.
+
 ## Verdict
 
 The debug application builds, the rootless and root JVM suites pass, and the
